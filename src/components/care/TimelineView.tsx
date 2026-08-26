@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api/client";
-import { parseProvenancePointer } from "../../lib/care-note/provenance";
+import { parseProvenancePointer } from "../../lib/care-note/provenance-utils";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 
 export type TimelineEntry = {

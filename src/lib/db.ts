@@ -1,3 +1,5 @@
+import "server-only";
+
 import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { invalidateGlanceCache } from "./cache/glanceCache";
@@ -24,7 +26,16 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = basePrisma;
 }
 
-async function invalidateByCareEntryId(careEntryId: string): Promise<void> {
+function invalidatePatientCache(patientId: string | undefined): void {
+  if (patientId) {
+    invalidateGlanceCache(patientId);
+  }
+}
+
+async function invalidateByCareEntryId(careEntryId: string | undefined): Promise<void> {
+  if (!careEntryId) {
+    return;
+  }
   const entry = await basePrisma.careEntry.findUnique({
     where: { id: careEntryId },
     select: { patientId: true },
@@ -40,17 +51,17 @@ export const prisma = basePrisma.$extends({
     careEntry: {
       async create({ args, query }) {
         const result = await query(args);
-        invalidateGlanceCache(result.patientId);
+        invalidatePatientCache(result.patientId);
         return result;
       },
       async update({ args, query }) {
         const result = await query(args);
-        invalidateGlanceCache(result.patientId);
+        invalidatePatientCache(result.patientId);
         return result;
       },
       async upsert({ args, query }) {
         const result = await query(args);
-        invalidateGlanceCache(result.patientId);
+        invalidatePatientCache(result.patientId);
         return result;
       },
     },

@@ -9,7 +9,7 @@ import {
   type GlanceTopCard,
 } from "../cache/glanceCache";
 import { ForbiddenError, type Actor, assertClinicScope } from "../auth/rbac";
-import { createProvenancePointer } from "./provenance";
+import { createProvenancePointer } from "./provenance-utils";
 import { scoreKeywords } from "../learning/importance";
 
 const RISK_LABELS = new Set(["risk", "red-flag", "red_flag", "critical", "urgent", "high"]);

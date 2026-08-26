@@ -3,7 +3,7 @@ import { requireActor, errorResponse } from "../auth/session";
 import { getGlanceCard } from "../care-note/glance";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
-import { createProvenancePointer } from "../care-note/provenance";
+import { createProvenancePointer } from "../care-note/provenance-utils";
 import { prisma } from "../db";
 
 const DEMO_USERS: Array<{ email: string; name: string; role: Role }> = [
