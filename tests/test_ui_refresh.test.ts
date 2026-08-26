@@ -1,6 +1,24 @@
 import { createElement, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/timeline",
+}));
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...props
+  }: {
+    href: string;
+    children: unknown;
+    className?: string;
+  }) => createElement("a", { href, ...props }, children as never),
+}));
+
 import { NoteEditor } from "../src/components/care/NoteEditor";
 import { GlanceView } from "../src/components/care/GlanceView";
 import { TimelineView } from "../src/components/care/TimelineView";

@@ -3,6 +3,7 @@ import { requireActor, errorResponse } from "../auth/session";
 import { getGlanceCard } from "../care-note/glance";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
+import { createProvenancePointer } from "../care-note/provenance";
 import { prisma } from "../db";
 
 const DEMO_USERS: Array<{ email: string; name: string; role: Role }> = [
@@ -39,6 +40,50 @@ export async function handleDemoBootstrap(): Promise<Response> {
 
     const patient = users.find((user) => user.role === "PATIENT");
     const clinician = users.find((user) => user.role === "CLINICIAN");
+    const staff = users.find((user) => user.role === "STAFF");
+
+    if (patient && clinician && staff) {
+      const existing = await prisma.careEntry.findFirst({
+        where: { patientId: patient.id },
+      });
+      if (!existing) {
+        const body = "Observed cough and fever. Plan: chase labs tomorrow.";
+        const excerpt = "cough and fever";
+        const startOffset = body.indexOf(excerpt);
+        const endOffset = startOffset + excerpt.length;
+        const entry = await prisma.careEntry.create({
+          data: {
+            clinicId: clinic.id,
+            patientId: patient.id,
+            authorId: clinician.id,
+            title: "Acute review",
+            body,
+            version: 1,
+            encounterAt: new Date(),
+          },
+        });
+        await prisma.comment.create({
+          data: {
+            careEntryId: entry.id,
+            authorId: staff.id,
+            body: "Internal staff comment: chase CRP and flag if rising.",
+          },
+        });
+        await prisma.highlight.create({
+          data: {
+            careEntryId: entry.id,
+            createdById: clinician.id,
+            startOffset,
+            endOffset,
+            excerpt,
+            label: "risk",
+            source: "MODEL",
+            confidence: 0.92,
+            provenancePointer: createProvenancePointer(entry.id, startOffset, endOffset),
+          },
+        });
+      }
+    }
     return Response.json({
       clinic: { id: clinic.id, name: clinic.name },
       users: users.map((user) => ({

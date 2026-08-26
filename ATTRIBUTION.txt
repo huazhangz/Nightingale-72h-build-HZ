@@ -1,0 +1,31 @@
+Open-source attribution
+=======================
+
+This repository uses the following open-source packages. License texts are
+available from the upstream projects and in node_modules/<package>/LICENSE
+where installed.
+
+Runtime
+-------
+- Next.js (next) — MIT License
+- React (react) — MIT License
+- React DOM (react-dom) — MIT License
+- Prisma Client (@prisma/client) — Apache License 2.0
+
+Development / data
+------------------
+- Prisma CLI (prisma) — Apache License 2.0
+- Vitest (vitest) — MIT License
+- TypeScript (typescript) — Apache License 2.0
+- tsx — MIT License
+- jsdom — MIT License
+- Testing Library React (@testing-library/react) — MIT License
+- Testing Library user-event (@testing-library/user-event) — MIT License
+- Node type definitions (@types/node) — MIT License
+- React type definitions (@types/react) — MIT License
+
+Not used in this build
+----------------------
+- Tailwind CSS — MIT License (listed because it is a common Next.js stack
+  dependency; this UI uses custom CSS instead)
+- Lucide React — ISC License (listed for completeness; icons are not bundled)

@@ -10,6 +10,7 @@ type DemoUser = { id: string; name: string; email: string; role: string };
 type DemoState = {
   patientId: string;
   userId: string;
+  role: string;
   users: DemoUser[];
   clinicName: string;
   setUserId: (id: string) => void;
@@ -24,6 +25,8 @@ export function useCareContext(): DemoState {
   }
   return value;
 }
+
+const ROLE_ORDER = ["PATIENT", "STAFF", "CLINICIAN"] as const;
 
 const NAV = [
   { href: "/timeline", label: "Timeline" },
@@ -62,9 +65,17 @@ export function CareShell({ children }: { children: ReactNode }) {
       });
   }, []);
 
+  const actor = users.find((user) => user.id === userId);
   const value = useMemo(
-    () => ({ patientId, userId, users, clinicName, setUserId }),
-    [patientId, userId, users, clinicName],
+    () => ({
+      patientId,
+      userId,
+      role: actor?.role ?? "",
+      users,
+      clinicName,
+      setUserId,
+    }),
+    [patientId, userId, users, clinicName, actor?.role],
   );
 
   return (
@@ -75,21 +86,32 @@ export function CareShell({ children }: { children: ReactNode }) {
             <p className="eyebrow">{clinicName}</p>
             <p className="brand">Nightingale care notes</p>
           </div>
-          <div className="field compact">
-            <label htmlFor="actor">Acting as</label>
-            <select
-              id="actor"
-              value={userId}
-              onChange={(event) => setUserId(event.target.value)}
-              disabled={!users.length}
-            >
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({user.role})
-                </option>
-              ))}
-            </select>
-          </div>
+          <fieldset className="role-selector">
+            <legend>Role</legend>
+            <div className="role-selector-row" role="radiogroup" aria-label="Role selector">
+              {ROLE_ORDER.map((role) => {
+                const match = users.find((user) => user.role === role);
+                const selected = match?.id === userId;
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={selected ? "role-btn active" : "role-btn"}
+                    disabled={!match}
+                    onClick={() => {
+                      if (match) {
+                        setUserId(match.id);
+                      }
+                    }}
+                  >
+                    {role}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
         </header>
         <nav className="nav" aria-label="Primary">
           {NAV.map((item) => (
@@ -120,9 +142,9 @@ export function CarePage({
   children,
 }: {
   title: string;
-  children: (session: { patientId: string; userId: string }) => ReactNode;
+  children: (session: { patientId: string; userId: string; role: string }) => ReactNode;
 }) {
-  const { patientId, userId } = useCareContext();
+  const { patientId, userId, role } = useCareContext();
   if (!patientId || !userId) {
     return (
       <>
@@ -134,7 +156,7 @@ export function CarePage({
   return (
     <>
       <h1>{title}</h1>
-      {children({ patientId, userId })}
+      {children({ patientId, userId, role })}
     </>
   );
 }

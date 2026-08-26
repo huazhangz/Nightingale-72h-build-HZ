@@ -1,14 +1,22 @@
 export type GlanceHighlight = {
   id: string;
+  careEntryId: string;
   excerpt: string;
   label: string | null;
   confidence: number | null;
+  startOffset: number;
+  endOffset: number;
+  provenancePointer: string | null;
+  importanceScore: number;
 };
 
 export type GlanceAction = {
   id: string;
   kind: "comment" | "highlight" | "plan";
   text: string;
+  careEntryId: string;
+  startOffset?: number;
+  endOffset?: number;
 };
 
 export type GlanceTopCard = {

@@ -29,6 +29,7 @@ enum FeedbackVerdict {
   AGREE
   DISAGREE
   EDIT
+  PIN
 }
 
 model Clinic {

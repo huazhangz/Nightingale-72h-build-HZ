@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api/client";
+import { parseProvenancePointer } from "../../lib/care-note/provenance";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 
 export type TimelineEntry = {
@@ -14,7 +16,14 @@ export type TimelineEntry = {
   patientFacingSummary: string;
   body?: string;
   comments: Array<{ id: string; authorRole: string; body: string; createdAt: string }>;
-  highlights: Array<{ id: string; excerpt: string; label: string | null }>;
+  highlights: Array<{
+    id: string;
+    excerpt: string;
+    label: string | null;
+    provenancePointer: string | null;
+    startOffset: number;
+    endOffset: number;
+  }>;
 };
 
 export async function loadTimeline(patientId: string, userId: string): Promise<TimelineEntry[]> {
@@ -24,10 +33,50 @@ export async function loadTimeline(patientId: string, userId: string): Promise<T
   return data.entries;
 }
 
-export function TimelineView({ patientId, userId }: { patientId: string; userId: string }) {
+function markedText(text: string, start?: number, end?: number): ReactNode {
+  if (start === undefined || end === undefined || start < 0 || end > text.length || end <= start) {
+    return text;
+  }
+  return (
+    <>
+      {text.slice(0, start)}
+      <mark className="provenance-mark" data-testid="provenance-mark">
+        {text.slice(start, end)}
+      </mark>
+      {text.slice(end)}
+    </>
+  );
+}
+
+export function TimelineView({
+  patientId,
+  userId,
+  role,
+}: {
+  patientId: string;
+  userId: string;
+  role?: string;
+}) {
+  const searchParams = useSearchParams();
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const targetEntryId = searchParams?.get("entryId") ?? null;
+  let targetStart = searchParams?.get("offset") ?? null;
+  let targetEnd = searchParams?.get("endOffset") ?? null;
+  const pointer = searchParams?.get("pointer");
+  if (pointer) {
+    try {
+      const parsed = parseProvenancePointer(pointer);
+      targetStart = String(parsed.startOffset);
+      targetEnd = String(parsed.endOffset);
+    } catch {
+      // keep query offsets
+    }
+  }
+  const startOffset = targetStart !== null ? Number(targetStart) : undefined;
+  const endOffset = targetEnd !== null ? Number(targetEnd) : undefined;
 
   const refresh = useCallback(async () => {
     try {
@@ -47,6 +96,14 @@ export function TimelineView({ patientId, userId }: { patientId: string; userId:
     });
   }, [patientId, refresh]);
 
+  useEffect(() => {
+    if (!targetEntryId || loading) {
+      return;
+    }
+    const node = document.getElementById(`entry-${targetEntryId}`);
+    node?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [targetEntryId, loading, entries]);
+
   if (loading) {
     return <p className="status">Loading timeline…</p>;
   }
@@ -58,36 +115,55 @@ export function TimelineView({ patientId, userId }: { patientId: string; userId:
   }
 
   return (
-    <ol className="timeline" aria-label="Patient encounter timeline">
-      {entries.map((entry) => (
-        <li key={entry.id} className="timeline-item">
-          <header className="timeline-item-head">
-            <h2>{entry.title}</h2>
-            <p className="meta">
-              {new Date(entry.encounterAt).toLocaleString()} · {entry.authorRole} · v{entry.version}
-            </p>
-          </header>
-          <p>{entry.body ?? entry.patientFacingSummary}</p>
-          {entry.highlights.length > 0 ? (
-            <ul className="chip-row" aria-label="Highlights">
-              {entry.highlights.map((highlight) => (
-                <li key={highlight.id} className="chip">
-                  {highlight.label ?? "highlight"}: {highlight.excerpt}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {entry.comments.length > 0 ? (
-            <ul className="comment-list" aria-label="Internal comments">
-              {entry.comments.map((comment) => (
-                <li key={comment.id}>
-                  <strong>{comment.authorRole}:</strong> {comment.body}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </li>
-      ))}
-    </ol>
+    <>
+      {role === "PATIENT" ? (
+        <p className="rbac-banner" role="status">
+          Patient view: internal staff comments and raw clinical notes are hidden.
+        </p>
+      ) : (
+        <p className="rbac-banner staff" role="status">
+          {role ?? "Clinician"} view: raw notes and internal comments are visible.
+        </p>
+      )}
+      <ol className="timeline" aria-label="Patient encounter timeline">
+        {entries.map((entry) => {
+          const focused = entry.id === targetEntryId;
+          const display = entry.body ?? entry.patientFacingSummary;
+          return (
+            <li
+              key={entry.id}
+              id={`entry-${entry.id}`}
+              className={focused ? "timeline-item focused" : "timeline-item"}
+            >
+              <header className="timeline-item-head">
+                <h2>{entry.title}</h2>
+                <p className="meta">
+                  {new Date(entry.encounterAt).toLocaleString()} · {entry.authorRole} · v{entry.version}
+                </p>
+              </header>
+              <p>{focused ? markedText(display, startOffset, endOffset) : display}</p>
+              {entry.highlights.length > 0 ? (
+                <ul className="chip-row" aria-label="Highlights">
+                  {entry.highlights.map((highlight) => (
+                    <li key={highlight.id} className="chip">
+                      {highlight.label ?? "highlight"}: {highlight.excerpt}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {entry.comments.length > 0 ? (
+                <ul className="comment-list" aria-label="Internal comments">
+                  {entry.comments.map((comment) => (
+                    <li key={comment.id}>
+                      <strong>{comment.authorRole}:</strong> {comment.body}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }

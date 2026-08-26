@@ -224,9 +224,89 @@ textarea:focus,
   font-size: 0.85rem;
 }
 
-.glance-card {
+.role-selector {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.45rem 0.7rem 0.65rem;
+  background: var(--paper);
+}
+
+.role-selector legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.role-selector-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.role-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.role-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #f7fff8;
+}
+
+.rbac-banner {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  background: #efe4d4;
+  color: var(--ink);
+}
+
+.rbac-banner.staff {
+  background: var(--chip);
+}
+
+.jump-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  gap: 1rem;
+  gap: 0.5rem;
+}
+
+.jump-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.jump-link:hover {
+  border-color: var(--accent);
+}
+
+.timeline-item.focused {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+
+.provenance-mark {
+  background: #ffe08a;
+  color: var(--ink);
+  padding: 0 0.15rem;
 }
 
 .glance-score .score {

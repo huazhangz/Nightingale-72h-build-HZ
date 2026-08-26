@@ -9,6 +9,8 @@ import {
   type GlanceTopCard,
 } from "../cache/glanceCache";
 import { ForbiddenError, type Actor, assertClinicScope } from "../auth/rbac";
+import { createProvenancePointer } from "./provenance";
+import { scoreKeywords } from "../learning/importance";
 
 const RISK_LABELS = new Set(["risk", "red-flag", "red_flag", "critical", "urgent", "high"]);
 
@@ -53,16 +55,36 @@ export async function computeGlanceCard(patientId: string): Promise<GlanceTopCar
     orderBy: { encounterAt: "desc" },
   });
 
+  const weightRows = await prisma.featureWeight.findMany();
+  const weights = new Map(weightRows.map((row) => [row.featureKey, row.weight]));
+
   const highlights: GlanceHighlight[] = entries
-    .flatMap((entry) => entry.highlights)
+    .flatMap((entry) =>
+      entry.highlights.map((highlight) => ({
+        ...highlight,
+        careEntryId: entry.id,
+        importanceScore: scoreKeywords(highlight.excerpt, weights),
+      })),
+    )
     .filter((highlight) => isRiskHighlight(highlight.label, highlight.confidence))
-    .sort((left, right) => (right.confidence ?? 0) - (left.confidence ?? 0))
+    .sort(
+      (left, right) =>
+        right.importanceScore - left.importanceScore ||
+        (right.confidence ?? 0) - (left.confidence ?? 0),
+    )
     .slice(0, 5)
     .map((highlight) => ({
       id: highlight.id,
+      careEntryId: highlight.careEntryId,
       excerpt: redactPhi(highlight.excerpt),
       label: highlight.label,
       confidence: highlight.confidence,
+      startOffset: highlight.startOffset,
+      endOffset: highlight.endOffset,
+      provenancePointer:
+        highlight.provenancePointer ??
+        createProvenancePointer(highlight.careEntryId, highlight.startOffset, highlight.endOffset),
+      importanceScore: highlight.importanceScore,
     }));
 
   const unresolvedActions: GlanceAction[] = [];
@@ -73,6 +95,7 @@ export async function computeGlanceCard(patientId: string): Promise<GlanceTopCar
           id: comment.id,
           kind: "comment",
           text: redactPhi(comment.body),
+          careEntryId: entry.id,
         });
       }
     }
@@ -82,6 +105,9 @@ export async function computeGlanceCard(patientId: string): Promise<GlanceTopCar
           id: highlight.id,
           kind: "highlight",
           text: redactPhi(highlight.excerpt),
+          careEntryId: entry.id,
+          startOffset: highlight.startOffset,
+          endOffset: highlight.endOffset,
         });
       }
     }
@@ -91,6 +117,7 @@ export async function computeGlanceCard(patientId: string): Promise<GlanceTopCar
           id: `${entry.id}:plan`,
           kind: "plan",
           text: redactPhi(line.trim()),
+          careEntryId: entry.id,
         });
       }
     }
