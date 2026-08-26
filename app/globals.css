@@ -643,9 +643,16 @@ textarea:focus,
 .chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.35rem;
   list-style: none;
+  margin: 0.4rem 0 0;
   padding: 0;
+}
+
+.chip-with-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .chip {

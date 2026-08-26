@@ -106,6 +106,7 @@ export function TimelineView({
   } | null>(null);
   const [savingHighlight, setSavingHighlight] = useState(false);
   const [submittingFinal, setSubmittingFinal] = useState<string | null>(null);
+  const [pinningId, setPinningId] = useState<string | null>(null);
   const isPatient = role === "PATIENT";
   const canHighlight = role === "STAFF" || role === "CLINICIAN";
 
@@ -213,6 +214,23 @@ export function TimelineView({
       setError(caught instanceof Error ? caught.message : t("note.saveError"));
     } finally {
       setSavingHighlight(false);
+    }
+  }
+
+  async function pinHighlight(highlightId: string) {
+    setPinningId(highlightId);
+    try {
+      await apiFetch(`/api/highlights/${highlightId}/feedback`, {
+        userId,
+        method: "POST",
+        body: { verdict: "PIN" },
+      });
+      notifyEntryChanged({ patientId, entryId: highlightId, reason: "updated" });
+      setEntries(await loadTimeline(patientId, userId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("note.saveError"));
+    } finally {
+      setPinningId(null);
     }
   }
 
@@ -428,7 +446,7 @@ export function TimelineView({
                   : "chip-manual-clinician"
                 : "chip-model";
               return (
-                <li key={highlight.id}>
+                <li key={highlight.id} className="chip-with-feedback">
                   <button
                     type="button"
                     data-action-id={highlight.id}
@@ -451,6 +469,16 @@ export function TimelineView({
                     {manual ? t("highlight.manual") : t("highlight.model")} ·{" "}
                     {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
                   </button>
+                  {canHighlight ? (
+                    <button
+                      type="button"
+                      className="jump-link"
+                      disabled={pinningId === highlight.id}
+                      onClick={() => void pinHighlight(highlight.id)}
+                    >
+                      {t("highlight.pin")}
+                    </button>
+                  ) : null}
                 </li>
               );
             })}

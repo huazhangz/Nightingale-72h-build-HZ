@@ -7,6 +7,8 @@ import {
   importanceScore,
   keywordFeatureKey,
   recordHighlightFeedback,
+  submitHighlightFeedback,
+  weightDeltaForVerdict,
 } from "../src/lib/learning/importance";
 import { createNoteFixture, deleteNoteFixture } from "./helpers/fixtures";
 
@@ -20,7 +22,7 @@ describe("self-learning importance", () => {
   beforeEach(async () => {
     fixture = await createNoteFixture("learning");
     await prisma.featureWeight.deleteMany({
-      where: { featureKey: keywordFeatureKey(KEYWORD) },
+      where: { featureKey: { in: [keywordFeatureKey(KEYWORD), keywordFeatureKey("nausea")] } },
     });
     const startOffset = fixture.entry.body.indexOf("cough");
     const highlight = await prisma.highlight.create({
@@ -39,7 +41,7 @@ describe("self-learning importance", () => {
 
   afterEach(async () => {
     await prisma.featureWeight.deleteMany({
-      where: { featureKey: keywordFeatureKey(KEYWORD) },
+      where: { featureKey: { in: [keywordFeatureKey(KEYWORD), keywordFeatureKey("nausea")] } },
     });
     if (!fixture) {
       return;
@@ -63,6 +65,13 @@ describe("self-learning importance", () => {
       verdict: "PIN",
     });
 
+    const storedFeedback = await prisma.highlightFeedback.findUniqueOrThrow({
+      where: {
+        highlightId_userId: { highlightId, userId: fixture.clinician.id },
+      },
+    });
+    expect(storedFeedback.verdict).toBe("PIN");
+
     const weightAfterPin = await prisma.featureWeight.findUniqueOrThrow({
       where: { featureKey: keywordFeatureKey(KEYWORD) },
     });
@@ -76,6 +85,13 @@ describe("self-learning importance", () => {
       userId: fixture.clinician.id,
       verdict: "EDIT",
     });
+
+    const afterEditRow = await prisma.highlightFeedback.findUniqueOrThrow({
+      where: {
+        highlightId_userId: { highlightId, userId: fixture.clinician.id },
+      },
+    });
+    expect(afterEditRow.verdict).toBe("EDIT");
 
     const weightAfterEdit = await prisma.featureWeight.findUniqueOrThrow({
       where: { featureKey: keywordFeatureKey(KEYWORD) },
@@ -116,5 +132,66 @@ describe("self-learning importance", () => {
     expect(other).toBeTruthy();
     expect(hyper!.importanceScore).toBeGreaterThan(other!.importanceScore);
     expect(ranked[0]?.id).toBe(hyper!.id);
+  });
+
+  it("does not let pinned medium terms outrank the critical reporting floor", async () => {
+    const chestStart = fixture.entry.body.indexOf("cough");
+    const critical = await prisma.highlight.create({
+      data: {
+        careEntryId: fixture.entry.id,
+        createdById: fixture.clinician.id,
+        startOffset: chestStart >= 0 ? chestStart : 0,
+        endOffset: (chestStart >= 0 ? chestStart : 0) + 10,
+        excerpt: "chest pain",
+        label: "CRITICAL",
+        source: "MODEL",
+        confidence: 0.5,
+      },
+    });
+    const medium = await prisma.highlight.create({
+      data: {
+        careEntryId: fixture.entry.id,
+        createdById: fixture.clinician.id,
+        startOffset: 0,
+        endOffset: 6,
+        excerpt: "nausea",
+        label: "MEDIUM",
+        source: "MODEL",
+        confidence: 0.99,
+      },
+    });
+
+    await submitHighlightFeedback(
+      { id: fixture.clinician.id, role: "CLINICIAN", clinicId: fixture.clinic.id },
+      medium.id,
+      { verdict: "PIN" },
+    );
+    await submitHighlightFeedback(
+      { id: fixture.clinician.id, role: "CLINICIAN", clinicId: fixture.clinic.id },
+      medium.id,
+      { verdict: "PIN" },
+    );
+
+    expect(await importanceScore("nausea")).toBeGreaterThan(await importanceScore("chest pain"));
+    expect(weightDeltaForVerdict("DISAGREE", "CRITICAL")).toBe(0);
+
+    await recordHighlightFeedback({
+      highlightId: critical.id,
+      userId: fixture.clinician.id,
+      verdict: "DISAGREE",
+    });
+    const criticalWeight = await prisma.featureWeight.findUnique({
+      where: { featureKey: keywordFeatureKey("chest") },
+    });
+    expect(criticalWeight?.weight ?? 0).toBeGreaterThanOrEqual(0);
+
+    clearGlanceCache();
+    const glance = await getGlanceCard(fixture.patient.id, {
+      id: fixture.clinician.id,
+      role: "CLINICIAN",
+      clinicId: fixture.clinic.id,
+    });
+    expect(glance.card.highestRiskHighlights[0]?.id).toBe(critical.id);
+    expect(glance.card.highestRiskHighlights[0]?.label).toBe("CRITICAL");
   });
 });

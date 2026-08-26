@@ -24,6 +24,7 @@ import { isUnresolvedActionText } from "./unresolved";
 import { scoreKeywords } from "../learning/importance";
 import { resolveAssignedClinician } from "./transparency";
 import { normalizeActionKind, type ActionKind } from "./actions";
+import { clinicalFloorRank } from "./risk-tone";
 
 const RISK_LABELS = new Set([
   "risk",
@@ -114,6 +115,7 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
         )
         .sort(
           (left, right) =>
+            clinicalFloorRank(right.label) - clinicalFloorRank(left.label) ||
             right.importanceScore - left.importanceScore ||
             (right.confidence ?? 0) - (left.confidence ?? 0),
         )

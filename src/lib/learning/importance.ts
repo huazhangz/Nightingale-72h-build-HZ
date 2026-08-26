@@ -1,5 +1,8 @@
 import type { FeedbackVerdict } from "@prisma/client";
+import { ForbiddenError, type Actor, assertClinicScope } from "../auth/rbac";
 import { prisma } from "../db";
+import { invalidateGlanceForCareEntry } from "../care-note/glance";
+import { clinicalFloorRank } from "../care-note/risk-tone";
 
 const STOPWORDS = new Set([
   "this",
@@ -62,6 +65,18 @@ export async function importanceScore(text: string): Promise<number> {
   return scoreKeywords(text, weights);
 }
 
+/** Negative learning never reduces the reporting floor of critical/high-risk labels. */
+export function weightDeltaForVerdict(
+  verdict: FeedbackVerdict,
+  highlightLabel: string | null,
+): number {
+  const delta = VERDICT_DELTA[verdict] ?? 0;
+  if (delta < 0 && clinicalFloorRank(highlightLabel) >= 100) {
+    return 0;
+  }
+  return delta;
+}
+
 export async function recordHighlightFeedback(input: {
   highlightId: string;
   userId: string;
@@ -71,7 +86,7 @@ export async function recordHighlightFeedback(input: {
   const highlight = await prisma.highlight.findUniqueOrThrow({
     where: { id: input.highlightId },
   });
-  const delta = VERDICT_DELTA[input.verdict] ?? 0;
+  const delta = weightDeltaForVerdict(input.verdict, highlight.label);
 
   await prisma.highlightFeedback.upsert({
     where: {
@@ -95,21 +110,48 @@ export async function recordHighlightFeedback(input: {
   const updated: Array<{ featureKey: string; weight: number }> = [];
   for (const keyword of extractKeywords(highlight.excerpt)) {
     const featureKey = keywordFeatureKey(keyword);
+    const existing = await prisma.featureWeight.findUnique({ where: { featureKey } });
+    const nextWeight = Math.max(0, (existing?.weight ?? 0) + delta);
     const row = await prisma.featureWeight.upsert({
       where: { featureKey },
       create: {
         featureKey,
-        weight: Math.max(0, delta),
+        weight: nextWeight,
         description: `Learned importance for "${keyword}"`,
         version: 1,
       },
       update: {
-        weight: { increment: delta },
+        weight: nextWeight,
         version: { increment: 1 },
       },
     });
     updated.push({ featureKey: row.featureKey, weight: row.weight });
   }
 
+  await invalidateGlanceForCareEntry(highlight.careEntryId);
   return { weights: updated };
+}
+
+export async function submitHighlightFeedback(
+  actor: Actor,
+  highlightId: string,
+  input: {
+    verdict: Extract<FeedbackVerdict, "PIN" | "EDIT" | "AGREE" | "DISAGREE">;
+    note?: string;
+  },
+) {
+  if (actor.role !== "STAFF" && actor.role !== "CLINICIAN" && actor.role !== "ADMIN") {
+    throw new ForbiddenError("Patients cannot submit highlight feedback");
+  }
+  const highlight = await prisma.highlight.findUniqueOrThrow({
+    where: { id: highlightId },
+    include: { careEntry: { select: { clinicId: true } } },
+  });
+  assertClinicScope(actor, highlight.careEntry.clinicId);
+  return recordHighlightFeedback({
+    highlightId,
+    userId: actor.id,
+    verdict: input.verdict,
+    note: input.note,
+  });
 }

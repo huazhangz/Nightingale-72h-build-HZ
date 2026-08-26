@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { riskBadgeClass, riskTone } from "../src/lib/care-note/risk-tone";
+import { riskBadgeClass, riskTone, clinicalFloorRank } from "../src/lib/care-note/risk-tone";
 
 describe("risk tone mapping", () => {
   it("maps critical, medium, and low labels onto distinct badge classes", () => {
@@ -16,5 +16,7 @@ describe("risk tone mapping", () => {
     expect(riskBadgeClass("INFO")).toBe("risk-badge risk-low");
     expect(riskBadgeClass("UNRESOLVED_ACTION")).toBe("risk-badge risk-action");
     expect(riskBadgeClass("PATIENT_INSIGHT")).toBe("risk-badge risk-insight");
+    expect(clinicalFloorRank("CRITICAL")).toBeGreaterThan(clinicalFloorRank("MEDIUM"));
+    expect(clinicalFloorRank("HIGH")).toBeGreaterThan(clinicalFloorRank("LOW"));
   });
 });

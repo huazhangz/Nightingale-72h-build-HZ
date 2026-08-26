@@ -8,6 +8,7 @@ import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
 import { createHumanHighlight } from "../care-note/highlights";
 import { createPatientAction, patchPatientAction } from "../care-note/actions";
+import { submitHighlightFeedback } from "../learning/importance";
 import { recordEntryViews, releaseFinalSummary } from "../care-note/progress-engine";
 import { prisma } from "../db";
 
@@ -229,6 +230,24 @@ export async function handleRevertEntry(request: Request, entryId: string): Prom
     }
     const entry = await revertEntry(actor, entryId, payload.targetVersion);
     return Response.json({ entry });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleHighlightFeedback(request: Request, highlightId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const payload = (await request.json()) as { verdict?: string; note?: string };
+    const verdict = payload.verdict?.trim().toUpperCase();
+    if (verdict !== "PIN" && verdict !== "EDIT" && verdict !== "AGREE" && verdict !== "DISAGREE") {
+      return Response.json({ error: "verdict must be PIN, EDIT, AGREE, or DISAGREE" }, { status: 400 });
+    }
+    const result = await submitHighlightFeedback(actor, highlightId, {
+      verdict,
+      note: payload.note,
+    });
+    return Response.json({ feedback: { verdict, highlightId }, weights: result.weights });
   } catch (error) {
     return errorResponse(error);
   }
