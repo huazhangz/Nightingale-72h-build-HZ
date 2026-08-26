@@ -1,20 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api/client";
 import { parseProvenancePointer } from "../../lib/care-note/provenance-utils";
+import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
+import { HighlightedNoteBody } from "./HighlightedNoteBody";
+import { NoteDetailModal } from "./NoteDetailModal";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 
 export type TimelineRevision = {
   version: number;
   createdAt: string;
   editorRole: string;
+  editorName?: string;
   summary: string | null;
-  body: string;
+  body?: string;
+  isCurrent?: boolean;
 };
 
 export type TimelineEntry = {
@@ -50,27 +55,19 @@ export async function loadTimeline(patientId: string, userId: string): Promise<T
   return data.entries;
 }
 
-function markedText(text: string, start?: number, end?: number): ReactNode {
-  if (start === undefined || end === undefined || start < 0 || end > text.length || end <= start) {
-    return text;
-  }
-  return (
-    <>
-      {text.slice(0, start)}
-      <mark className="provenance-mark" data-testid="provenance-mark">
-        {text.slice(start, end)}
-      </mark>
-      {text.slice(end)}
-    </>
-  );
-}
-
 function canShowStaffActions(role: string | undefined, authorRole: string | undefined): boolean {
   return role === "STAFF" && authorRole === "STAFF";
 }
 
 function canShowClinicianActions(role: string | undefined, authorRole: string | undefined): boolean {
   return (role === "CLINICIAN" || role === "ADMIN") && authorRole === "CLINICIAN";
+}
+
+function authorBadge(authorRole: string | undefined): { className: string; icon: string } {
+  if (authorRole === "STAFF") {
+    return { className: "author-badge author-badge-staff", icon: "🩺" };
+  }
+  return { className: "author-badge author-badge-clinician", icon: "⚕️" };
 }
 
 export function TimelineView({
@@ -87,6 +84,8 @@ export function TimelineView({
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [historyId, setHistoryId] = useState<string | null>(null);
   const isPatient = role === "PATIENT";
 
   const targetEntryId = searchParams?.get("entryId") ?? null;
@@ -129,7 +128,11 @@ export function TimelineView({
     }
     const node = document.getElementById(`entry-${targetEntryId}`);
     node?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [targetEntryId, loading, entries]);
+    if (startOffset !== undefined && endOffset !== undefined) {
+      const mark = document.getElementById(`hl-${targetEntryId}-${startOffset}-${endOffset}`);
+      mark?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [targetEntryId, loading, entries, startOffset, endOffset]);
 
   if (loading) {
     return <p className="status">{t("timeline.loading")}</p>;
@@ -141,7 +144,12 @@ export function TimelineView({
     return <p className="status">{t("timeline.empty")}</p>;
   }
 
+  const detailEntry = entries.find((entry) => entry.id === detailId) ?? null;
+  const historyEntry = entries.find((entry) => entry.id === historyId) ?? null;
+  const modalEntry = detailEntry ?? historyEntry;
+
   return (
+    <>
     <ol className="timeline" aria-label={t("timeline.aria")}>
       {entries.map((entry) => {
         const focused = entry.id === targetEntryId;
@@ -151,32 +159,85 @@ export function TimelineView({
         const showEdit =
           canShowStaffActions(role, entry.authorRole) ||
           canShowClinicianActions(role, entry.authorRole);
+        const badge = authorBadge(entry.authorRole);
+        const itemRoleClass =
+          entry.authorRole === "STAFF"
+            ? "timeline-item timeline-item-staff"
+            : entry.authorRole === "CLINICIAN"
+              ? "timeline-item timeline-item-clinician"
+              : "timeline-item";
         return (
           <li
             key={entry.id}
             id={`entry-${entry.id}`}
-            className={focused ? "timeline-item focused" : "timeline-item"}
+            className={focused ? `${itemRoleClass} focused` : itemRoleClass}
           >
             <header className="timeline-item-head">
-              <h2>{entry.title}</h2>
+              <h2>
+                {!isPatient && entry.authorRole ? (
+                  <span className={badge.className} title={entry.authorRole}>
+                    <span aria-hidden="true">{badge.icon}</span>{" "}
+                    {t(entry.authorRole === "STAFF" ? "role.STAFF_NOTE" : "role.CLINICIAN_NOTE")}
+                  </span>
+                ) : null}
+                {entry.title}
+              </h2>
               <p className="meta">
                 {formatDateTime(entry.encounterAt)}
                 {isPatient ? null : (
                   <>
                     {" · "}
-                    {entry.authorRole}
+                    {entry.authorName ?? entry.authorRole}
                     {" · "}
                     {t("timeline.version", { n: entry.version ?? 1 })}
                   </>
                 )}
               </p>
-              {showEdit ? (
-                <Link className="jump-link" href={`/note-editor?entryId=${entry.id}`}>
-                  {t("note.editExisting")}
-                </Link>
-              ) : null}
+              <div className="timeline-actions">
+                {!isPatient ? (
+                  <button
+                    type="button"
+                    className="jump-link"
+                    onClick={() => {
+                      setHistoryId(null);
+                      setDetailId(entry.id);
+                    }}
+                  >
+                    {t("timeline.viewDetail")}
+                  </button>
+                ) : null}
+                {!isPatient ? (
+                  <button
+                    type="button"
+                    className="jump-link"
+                    onClick={() => {
+                      setDetailId(null);
+                      setHistoryId(entry.id);
+                    }}
+                  >
+                    {t("timeline.viewHistory")}
+                  </button>
+                ) : null}
+                {showEdit ? (
+                  <Link className="jump-link" href={`/note-editor?entryId=${entry.id}`}>
+                    {t("note.editExisting")}
+                  </Link>
+                ) : null}
+              </div>
             </header>
-            <p>{focused && !isPatient ? markedText(display, startOffset, endOffset) : display}</p>
+            <p className="note-body">
+              {isPatient ? (
+                display
+              ) : (
+                <HighlightedNoteBody
+                  entryId={entry.id}
+                  text={display}
+                  highlights={entry.highlights ?? []}
+                  focusStart={focused ? startOffset : undefined}
+                  focusEnd={focused ? endOffset : undefined}
+                />
+              )}
+            </p>
             {isPatient && entry.assignedClinician && entry.lastUpdatedBy ? (
               <ConsultationBoard
                 stage={entry.consultationStage ?? "SUBMITTED"}
@@ -189,8 +250,24 @@ export function TimelineView({
             {!isPatient && (entry.highlights?.length ?? 0) > 0 ? (
               <ul className="chip-row" aria-label={t("timeline.highlights")}>
                 {entry.highlights?.map((highlight) => (
-                  <li key={highlight.id} className="chip">
-                    {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
+                  <li key={highlight.id}>
+                    <button
+                      type="button"
+                      className={`chip ${riskBadgeClass(highlight.label)}`}
+                      onClick={() => {
+                        const mark = document.getElementById(
+                          `hl-${entry.id}-${highlight.startOffset}-${highlight.endOffset}`,
+                        );
+                        document.getElementById(`entry-${entry.id}`)?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "center",
+                        });
+                        mark?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        mark?.classList.add("provenance-mark");
+                      }}
+                    >
+                      {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -204,20 +281,25 @@ export function TimelineView({
                 ))}
               </ul>
             ) : null}
-            {role === "CLINICIAN" && entry.revisions && entry.revisions.length > 0 ? (
-              <ul className="comment-list" aria-label={t("version.history")}>
-                {entry.revisions.map((revision) => (
-                  <li key={`${entry.id}-rev-${revision.version}`}>
-                    {t("timeline.version", { n: revision.version })}
-                    {revision.summary ? ` · ${revision.summary}` : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
           </li>
         );
       })}
     </ol>
+    {modalEntry && !isPatient ? (
+      <NoteDetailModal
+        entry={modalEntry}
+        role={role}
+        showEdit={
+          canShowStaffActions(role, modalEntry.authorRole) ||
+          canShowClinicianActions(role, modalEntry.authorRole)
+        }
+        onClose={() => {
+          setDetailId(null);
+          setHistoryId(null);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

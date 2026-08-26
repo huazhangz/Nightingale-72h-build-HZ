@@ -57,7 +57,7 @@ export function NoteEditor({
     setEntryId(match.id);
     setTitle(match.title);
     setBody(match.body ?? match.patientFacingSummary);
-    setVersion(match.version);
+    setVersion(match.version ?? 1);
   }, [requestedEntryId, entries, role]);
 
   if (!canWrite) {
@@ -164,7 +164,7 @@ export function NoteEditor({
             if (match) {
               setTitle(match.title);
               setBody(match.body ?? match.patientFacingSummary);
-              setVersion(match.version);
+              setVersion(match.version ?? 1);
             } else {
               setVersion(null);
             }
@@ -173,7 +173,7 @@ export function NoteEditor({
           <option value="">{t("note.createNew")}</option>
           {editableEntries.map((entry) => (
             <option key={entry.id} value={entry.id}>
-              {t("note.versionOption", { title: entry.title, n: entry.version })}
+              {t("note.versionOption", { title: entry.title, n: entry.version ?? 1 })}
             </option>
           ))}
         </select>

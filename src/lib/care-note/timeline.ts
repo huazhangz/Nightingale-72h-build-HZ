@@ -124,16 +124,35 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         endOffset: highlight.endOffset,
       }));
 
-    const revisions =
+    const historical =
       includeRevisions && Array.isArray(entry.revisions)
         ? entry.revisions.map((revision) => ({
             version: revision.version,
             createdAt: revision.createdAt.toISOString(),
             editorRole: revision.editor.role,
+            editorName: revision.editor.name,
             summary: revision.summary,
-            body: redactPhi(revision.body),
+            body: showRaw ? redactPhi(revision.body) : undefined,
+            isCurrent: false as const,
           }))
-        : undefined;
+        : [];
+
+    const currentRevision = {
+      version: entry.version,
+      createdAt: entry.updatedAt.toISOString(),
+      editorRole: lastUpdatedBy.role,
+      editorName: lastUpdatedBy.name,
+      summary: "current",
+      body: showRaw ? redactedBody : undefined,
+      isCurrent: true as const,
+    };
+
+    const revisions = includeRevisions
+      ? [
+          ...historical.filter((revision) => revision.version !== entry.version),
+          currentRevision,
+        ]
+      : undefined;
 
     return {
       id: entry.id,

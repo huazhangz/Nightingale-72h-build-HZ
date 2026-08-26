@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getPatientTimeline } from "../src/lib/care-note/timeline";
 import { revertCareEntry, updateCareEntry } from "../src/lib/care-note/revision";
 import { prisma } from "../src/lib/db";
 import { createNoteFixture, deleteNoteFixture } from "./helpers/fixtures";
@@ -105,5 +106,21 @@ describe("revision history", () => {
     expect(serialized).not.toContain("+65 91234567");
     expect(serialized).not.toContain(phiContent);
     expect(serialized).not.toMatch(/body|content|note/i);
+  });
+
+  it("surfaces v1, v2, and the current v3 snapshot on the clinician timeline", async () => {
+    await updateCareEntry(fixture.entry.id, "Second draft of the encounter.", fixture.clinician.id);
+    await updateCareEntry(fixture.entry.id, "Third draft of the encounter.", fixture.clinician.id);
+
+    const [entry] = await getPatientTimeline(fixture.patient.id, {
+      id: fixture.clinician.id,
+      role: "CLINICIAN",
+      clinicId: fixture.clinic.id,
+    });
+
+    expect(entry.revisions?.map((revision) => revision.version)).toEqual([1, 2, 3]);
+    expect(entry.revisions?.find((revision) => revision.version === 1)?.body).toBe(fixture.entry.body);
+    expect(entry.revisions?.find((revision) => revision.version === 2)?.body).toBe("Second draft of the encounter.");
+    expect(entry.revisions?.find((revision) => revision.isCurrent)?.body).toBe("Third draft of the encounter.");
   });
 });

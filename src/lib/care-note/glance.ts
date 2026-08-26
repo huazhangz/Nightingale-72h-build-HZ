@@ -22,7 +22,18 @@ import { createProvenancePointer } from "./provenance-utils";
 import { scoreKeywords } from "../learning/importance";
 import { resolveAssignedClinician } from "./transparency";
 
-const RISK_LABELS = new Set(["risk", "red-flag", "red_flag", "critical", "urgent", "high"]);
+const RISK_LABELS = new Set([
+  "risk",
+  "red-flag",
+  "red_flag",
+  "critical",
+  "urgent",
+  "high",
+  "medium",
+  "warning",
+  "low",
+  "info",
+]);
 
 function recencyScore(latestEncounterAt: Date | null): number {
   if (!latestEncounterAt) {

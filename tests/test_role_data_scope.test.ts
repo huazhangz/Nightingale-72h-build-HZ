@@ -92,7 +92,8 @@ describe("role-scoped timeline and glance payloads", () => {
     expect(entry.comments).toHaveLength(1);
     expect(entry.comments[0]?.body).toMatch(/follow-up CRP/);
     expect(entry.highlights).toEqual([]);
-    expect(entry.revisions).toBeUndefined();
+    expect(entry.revisions?.some((revision) => revision.isCurrent && revision.version === 1)).toBe(true);
+    expect(entry.revisions?.every((revision) => revision.body === undefined)).toBe(true);
   });
 
   it("returns full clinician payload including comments and AI risk highlights", async () => {
@@ -100,7 +101,8 @@ describe("role-scoped timeline and glance payloads", () => {
     expect(entry.body).toContain("Observed cough");
     expect(entry.comments).toHaveLength(1);
     expect(entry.highlights?.length).toBeGreaterThan(0);
-    expect(entry.revisions).toEqual([]);
+    expect(entry.revisions?.some((revision) => revision.isCurrent && revision.version === 1)).toBe(true);
+    expect(entry.revisions?.find((revision) => revision.isCurrent)?.body).toContain("Observed cough");
   });
 
   it("scopes glance so patients do not receive recency scores, feature weights, risk flags, or internal actions", async () => {

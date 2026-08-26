@@ -18,6 +18,8 @@ const SAMPLE_KEYS: MessageKey[] = [
   "action.comment",
   "action.highlight",
   "version.history",
+  "timeline.viewHistory",
+  "timeline.viewDetail",
   "version.revert",
   "login.patientTitle",
   "progress.submitted",

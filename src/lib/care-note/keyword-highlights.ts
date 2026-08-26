@@ -1,4 +1,4 @@
-export type RiskLabel = "HIGH" | "CRITICAL";
+export type RiskLabel = "HIGH" | "CRITICAL" | "MEDIUM" | "LOW";
 
 export type RiskPhraseHit = {
   startOffset: number;
@@ -14,6 +14,11 @@ export const LOCAL_RISK_TERMS: Array<{ phrase: string; label: RiskLabel }> = [
   { phrase: "hyperpyrexia", label: "CRITICAL" },
   { phrase: "allergy", label: "HIGH" },
   { phrase: "fever", label: "HIGH" },
+  { phrase: "dizziness", label: "MEDIUM" },
+  { phrase: "nausea", label: "MEDIUM" },
+  { phrase: "headache", label: "MEDIUM" },
+  { phrase: "cough", label: "LOW" },
+  { phrase: "fatigue", label: "LOW" },
 ];
 
 export function findLocalRiskPhrases(body: string): RiskPhraseHit[] {

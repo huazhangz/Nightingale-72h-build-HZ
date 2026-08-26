@@ -372,6 +372,105 @@ textarea:focus,
   box-shadow: 0 0 0 3px var(--accent);
 }
 
+.timeline-item-staff {
+  border-left: 4px solid #2f6f8f;
+}
+
+.timeline-item-clinician {
+  border-left: 4px solid #6b3a2a;
+}
+
+.timeline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.author-badge {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.author-badge-staff {
+  background: #d7eef7;
+  color: #1d4c63;
+}
+
+.author-badge-clinician {
+  background: #f4ddd4;
+  color: #6b3a2a;
+}
+
+.risk-badge.risk-critical,
+.chip.risk-critical {
+  background: #9b1c1c;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.risk-badge.risk-medium,
+.chip.risk-medium {
+  background: #c58a12;
+  color: #1c2118;
+  border: 0;
+  cursor: pointer;
+}
+
+.risk-badge.risk-low,
+.chip.risk-low {
+  background: #2f7a4a;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.inline-risk {
+  padding: 0 0.12rem;
+  border-radius: 2px;
+}
+
+.inline-risk-critical {
+  background: #f8c9c9;
+}
+
+.inline-risk-medium {
+  background: #f7e3a1;
+}
+
+.inline-risk-low {
+  background: #cde8d6;
+}
+
+.note-detail-modal {
+  width: min(44rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.revision-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.revision-body {
+  white-space: pre-wrap;
+  font: inherit;
+  margin: 0.35rem 0 0;
+  padding: 0.5rem 0.65rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
 .provenance-mark {
   background: #ffe08a;
   color: var(--ink);

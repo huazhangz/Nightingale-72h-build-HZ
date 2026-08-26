@@ -3,7 +3,7 @@ import { invalidateGlanceForCareEntry } from "./glance";
 import { createProvenancePointer } from "./provenance-utils";
 import { findLocalRiskPhrases } from "./keyword-highlights";
 
-const LOCAL_LABELS = ["HIGH", "CRITICAL"] as const;
+const LOCAL_LABELS = ["HIGH", "CRITICAL", "MEDIUM", "LOW", "WARNING", "INFO"] as const;
 
 export async function syncLocalRiskHighlights(careEntryId: string, body: string, createdById: string): Promise<void> {
   await prisma.highlight.deleteMany({
@@ -29,7 +29,8 @@ export async function syncLocalRiskHighlights(careEntryId: string, body: string,
       excerpt: hit.excerpt,
       label: hit.label,
       source: "MODEL" as const,
-      confidence: hit.label === "CRITICAL" ? 0.95 : 0.85,
+      confidence:
+        hit.label === "CRITICAL" ? 0.95 : hit.label === "HIGH" ? 0.85 : hit.label === "MEDIUM" ? 0.7 : 0.55,
       provenancePointer: createProvenancePointer(careEntryId, hit.startOffset, hit.endOffset),
     })),
   });

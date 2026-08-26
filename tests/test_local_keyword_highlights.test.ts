@@ -16,6 +16,14 @@ describe("local keyword risk matcher", () => {
     expect(labels.fever).toBe("HIGH");
     expect(labels.allergy).toBe("HIGH");
   });
+
+  it("labels medium and low symptom phrases with matching risk colors", () => {
+    const hits = findLocalRiskPhrases("Persistent cough with nausea and fatigue.");
+    const labels = Object.fromEntries(hits.map((hit) => [hit.excerpt.toLowerCase(), hit.label]));
+    expect(labels.cough).toBe("LOW");
+    expect(labels.nausea).toBe("MEDIUM");
+    expect(labels.fatigue).toBe("LOW");
+  });
 });
 
 describe("local keyword highlights on note write", () => {

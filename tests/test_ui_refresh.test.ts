@@ -203,3 +203,116 @@ describe("search result navigation", () => {
     expect(link.getAttribute("href")).toBe("/timeline?entryId=entry-42");
   });
 });
+
+describe("timeline detail modal and inline risk highlighting", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("highlights risk phrases, color-codes badges, and opens revision history", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: "e1",
+                title: "ED triage",
+                encounterAt: new Date().toISOString(),
+                version: 3,
+                status: "FINAL",
+                authorRole: "CLINICIAN",
+                authorName: "Casey Clinician",
+                patientFacingSummary: "chest pain and cough",
+                body: "chest pain and cough",
+                comments: [{ id: "c1", authorRole: "STAFF", body: "Nurse handoff", createdAt: new Date().toISOString() }],
+                highlights: [
+                  { id: "h1", excerpt: "chest pain", label: "CRITICAL", provenancePointer: null, startOffset: 0, endOffset: 10 },
+                  { id: "h2", excerpt: "cough", label: "LOW", provenancePointer: null, startOffset: 15, endOffset: 20 },
+                ],
+                revisions: [
+                  { version: 1, createdAt: new Date().toISOString(), editorRole: "CLINICIAN", summary: null, body: "v1 body", isCurrent: false },
+                  { version: 2, createdAt: new Date().toISOString(), editorRole: "CLINICIAN", summary: null, body: "v2 body", isCurrent: false },
+                  { version: 3, createdAt: new Date().toISOString(), editorRole: "CLINICIAN", summary: "current", body: "chest pain and cough", isCurrent: true },
+                ],
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    render(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(TimelineView, {
+          patientId: "patient-1",
+          userId: "clinician-1",
+          role: "CLINICIAN",
+        }),
+      ),
+    );
+
+    const critical = await screen.findByRole("button", { name: /CRITICAL: chest pain/i });
+    expect(critical.className).toMatch(/risk-critical/);
+    expect(screen.getByRole("button", { name: /LOW: cough/i }).className).toMatch(/risk-low/);
+    expect(document.querySelector(".inline-risk-critical")?.textContent).toBe("chest pain");
+    expect(screen.getByText("Clinician note")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "View revision history" }));
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("v1 body")).toBeTruthy();
+    expect(screen.getByText("v2 body")).toBeTruthy();
+    expect(screen.getAllByText("Nurse handoff").length).toBeGreaterThan(1);
+  });
+
+  it("distinguishes nursing notes from clinician notes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            entries: [
+              {
+                id: "staff-note",
+                title: "Night shift",
+                encounterAt: new Date().toISOString(),
+                version: 1,
+                status: "FINAL",
+                authorRole: "STAFF",
+                authorName: "Sam Staff",
+                patientFacingSummary: "vitals stable",
+                body: "vitals stable",
+                comments: [],
+                highlights: [],
+                revisions: [{ version: 1, createdAt: new Date().toISOString(), editorRole: "STAFF", summary: "current", body: "vitals stable", isCurrent: true }],
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    render(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(TimelineView, {
+          patientId: "patient-1",
+          userId: "staff-1",
+          role: "STAFF",
+        }),
+      ),
+    );
+
+    expect(await screen.findByText("Nursing note")).toBeTruthy();
+    expect(document.querySelector(".timeline-item-staff")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Edit existing note" })).toBeTruthy();
+  });
+});

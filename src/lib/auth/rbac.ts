@@ -98,7 +98,7 @@ export function canReadAiDoctorContent(role: Actor["role"]): boolean {
 }
 
 export function canReadRevisionLog(role: Actor["role"]): boolean {
-  return role === "CLINICIAN" || role === "ADMIN";
+  return role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
 }
 
 export function canWriteClinicalNotes(role: Actor["role"]): boolean {

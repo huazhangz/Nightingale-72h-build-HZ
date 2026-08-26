@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api/client";
 import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cache/glanceCache";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
+import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
 
@@ -110,7 +111,9 @@ export function GlanceView({
               {risks.map((highlight: GlanceHighlight) => (
                 <li key={highlight.id}>
                   <Link className="jump-link" href={timelineHref(highlight)}>
-                    <span className="badge">{t(riskLabelKey(highlight.label))}</span>
+                    <span className={`badge ${riskBadgeClass(highlight.label)}`}>
+                      {t(riskLabelKey(highlight.label))}
+                    </span>
                     {highlight.excerpt}
                   </Link>
                 </li>

@@ -83,7 +83,7 @@ export function useI18n(): I18nValue {
 
 export function riskLabelKey(label: string | null | undefined): MessageKey {
   const normalized = label?.trim().toUpperCase();
-  if (normalized === "CRITICAL" || normalized === "HIGH" || normalized === "MEDIUM" || normalized === "LOW") {
+  if (normalized === "CRITICAL" || normalized === "HIGH" || normalized === "MEDIUM" || normalized === "LOW" || normalized === "WARNING" || normalized === "INFO") {
     return `risk.${normalized}` as MessageKey;
   }
   return "risk.risk";
