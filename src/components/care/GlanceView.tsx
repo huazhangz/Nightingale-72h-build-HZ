@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api/client";
 import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cache/glanceCache";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
+import { RecencyExplainer } from "./RecencyExplainer";
 import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
@@ -96,13 +97,11 @@ export function GlanceView({
   const risks = isPatient ? [] : card.highestRiskHighlights;
 
   return (
-    <section className="glance-card" aria-label={t("glance.aria")}>
+    <section className="glance-card glance-top" aria-label={t("glance.aria")}>
       {!isPatient ? (
       <div className="glance-score">
         <p className="label">{t("glance.recency")}</p>
-        <p className="score" data-testid="recency-score">
-          {card.recencyScore}
-        </p>
+        <RecencyExplainer score={card.recencyScore ?? 0} />
         <p className="muted" data-testid="recency-generated">
           {formatDateTime(card.generatedAt)}
         </p>
@@ -128,6 +127,13 @@ export function GlanceView({
                 <li key={highlight.id}>
                   <Link className="jump-link" href={timelineHref(highlight)}>
                     <span className={`badge ${riskBadgeClass(highlight.label)}`}>
+                      {highlight.source === "HUMAN" ? (
+                        <span aria-hidden="true">
+                          {highlight.createdByRole === "STAFF" ? "🩺" : "⚕️"}
+                        </span>
+                      ) : (
+                        <span aria-hidden="true">🤖</span>
+                      )}{" "}
                       {t(riskLabelKey(highlight.label))}
                     </span>
                     {highlight.excerpt}
@@ -149,7 +155,9 @@ export function GlanceView({
               <li key={action.id}>
                 <Link className="jump-link" href={actionHref(action)}>
                   {!isPatient ? (
-                    <span className="badge">{t(`action.${action.kind}` as MessageKey)}</span>
+                    <span className={`badge ${riskBadgeClass("UNRESOLVED_ACTION")}`}>
+                      {t(`action.${action.kind}` as MessageKey)}
+                    </span>
                   ) : null}
                   {action.text}
                 </Link>

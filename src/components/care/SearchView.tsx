@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { useI18n } from "../../lib/i18n/I18nContext";
 import { apiFetch } from "../../lib/api/client";
+import type { SearchSort } from "../../lib/care-note/search";
 
 type SearchHit = {
   id: string;
@@ -26,6 +27,9 @@ export function SearchView({
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SearchSort>("newest");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
   const [error, setError] = useState<string | null>(null);
   const isPatient = role === "PATIENT";
@@ -37,6 +41,13 @@ export function SearchView({
       if (query.trim()) {
         params.set("q", query.trim());
       }
+      params.set("sort", sort);
+      if (from) {
+        params.set("from", from);
+      }
+      if (to) {
+        params.set("to", to);
+      }
       const qs = params.toString();
       const data = await apiFetch<{ results: SearchHit[] }>(
         `/api/patients/${patientId}/search${qs ? `?${qs}` : ""}`,
@@ -46,7 +57,7 @@ export function SearchView({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("search.error"));
     }
-  }, [patientId, userId, query, t]);
+  }, [patientId, userId, query, sort, from, to, t]);
 
   useEffect(() => {
     void refresh();
@@ -66,6 +77,38 @@ export function SearchView({
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t("search.placeholder")}
         />
+      </div>
+      <div className="search-toolbar">
+        <div className="field">
+          <label htmlFor="search-sort">{t("search.sort")}</label>
+          <select
+            id="search-sort"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as SearchSort)}
+          >
+            <option value="newest">{t("search.sortNewest")}</option>
+            <option value="oldest">{t("search.sortOldest")}</option>
+            <option value="relevance">{t("search.sortRelevance")}</option>
+          </select>
+        </div>
+        <div className="field">
+          <label htmlFor="search-from">{t("search.from")}</label>
+          <input
+            id="search-from"
+            type="date"
+            value={from}
+            onChange={(event) => setFrom(event.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="search-to">{t("search.to")}</label>
+          <input
+            id="search-to"
+            type="date"
+            value={to}
+            onChange={(event) => setTo(event.target.value)}
+          />
+        </div>
       </div>
       {error ? (
         <p className="status error" role="alert">

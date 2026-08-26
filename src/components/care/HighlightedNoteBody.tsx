@@ -8,6 +8,8 @@ export type HighlightSpan = {
   startOffset: number;
   endOffset: number;
   label: string | null;
+  source?: string;
+  createdByRole?: string;
 };
 
 function clip(start: number, end: number, length: number): [number, number] | null {
@@ -44,14 +46,15 @@ export function HighlightedNoteBody({
         start: clipped[0],
         end: clipped[1],
         tone: riskTone(highlight.label),
+        source: highlight.source ?? "MODEL",
+        createdByRole: highlight.createdByRole,
       };
     })
     .filter((range): range is NonNullable<typeof range> => range !== null)
     .sort((left, right) => left.start - right.start || right.end - left.end);
 
-  const focus = focusStart !== undefined && focusEnd !== undefined
-    ? clip(focusStart, focusEnd, length)
-    : null;
+  const focus =
+    focusStart !== undefined && focusEnd !== undefined ? clip(focusStart, focusEnd, length) : null;
 
   if (ranges.length === 0 && !focus) {
     return text;
@@ -68,6 +71,7 @@ export function HighlightedNoteBody({
   }
   const cuts = [...points].sort((left, right) => left - right);
   const parts: ReactNode[] = [];
+  const rank = { critical: 5, action: 4, medium: 3, insight: 2, low: 1 };
 
   for (let index = 0; index < cuts.length - 1; index += 1) {
     const start = cuts[index]!;
@@ -82,24 +86,25 @@ export function HighlightedNoteBody({
       parts.push(<span key={`${entryId}-plain-${start}`}>{slice}</span>);
       continue;
     }
-    const primary = covering.sort((left, right) => {
-      const rank = { critical: 3, medium: 2, low: 1 };
-      return rank[right.tone] - rank[left.tone];
-    })[0];
+    const primary = covering.sort((left, right) => rank[right.tone] - rank[left.tone])[0];
     const tone = primary?.tone ?? "medium";
-        const markId = primary && start === primary.start
-          ? `hl-${entryId}-${primary.start}-${primary.end}`
-          : undefined;
-        parts.push(
-          <mark
-            key={`${entryId}-mark-${start}`}
-            id={markId}
-            data-testid={focused ? "provenance-mark" : undefined}
-            className={`inline-risk inline-risk-${tone}${focused ? " provenance-mark" : ""}`}
-          >
-            {slice}
-          </mark>,
-        );
+    const origin =
+      primary?.source === "HUMAN"
+        ? primary.createdByRole === "STAFF"
+          ? "staff"
+          : "clinician"
+        : "model";
+    const markId = primary && start === primary.start ? `hl-${entryId}-${primary.start}-${primary.end}` : undefined;
+    parts.push(
+      <mark
+        key={`${entryId}-mark-${start}`}
+        id={markId}
+        data-testid={focused ? "provenance-mark" : undefined}
+        className={`inline-risk inline-risk-${tone} inline-origin-${origin}${focused ? " provenance-mark" : ""}`}
+      >
+        {slice}
+      </mark>,
+    );
   }
 
   return <>{parts}</>;

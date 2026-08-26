@@ -1,4 +1,12 @@
-export type RiskLabel = "HIGH" | "CRITICAL" | "MEDIUM" | "LOW";
+export type RiskLabel =
+  | "HIGH"
+  | "CRITICAL"
+  | "MEDIUM"
+  | "LOW"
+  | "WARNING"
+  | "INFO"
+  | "UNRESOLVED_ACTION"
+  | "PATIENT_INSIGHT";
 
 export type RiskPhraseHit = {
   startOffset: number;
@@ -21,6 +29,15 @@ export const LOCAL_RISK_TERMS: Array<{ phrase: string; label: RiskLabel }> = [
   { phrase: "fatigue", label: "LOW" },
 ];
 
+/** Generic / low-signal tokens that create highlight fatigue. */
+export const GENERIC_LOW_TERMS = new Set(["cough", "fatigue", "headache"]);
+
+function isWordishBoundary(body: string, start: number, end: number): boolean {
+  const before = start === 0 ? " " : body[start - 1] ?? " ";
+  const after = end >= body.length ? " " : body[end] ?? " ";
+  return !/[A-Za-z0-9]/.test(before) && !/[A-Za-z0-9]/.test(after);
+}
+
 export function findLocalRiskPhrases(body: string): RiskPhraseHit[] {
   const lower = body.toLowerCase();
   const taken = new Array<boolean>(body.length).fill(false);
@@ -35,7 +52,7 @@ export function findLocalRiskPhrases(body: string): RiskPhraseHit[] {
       }
       const end = start + term.phrase.length;
       const overlaps = taken.slice(start, end).some(Boolean);
-      if (!overlaps) {
+      if (!overlaps && isWordishBoundary(body, start, end)) {
         for (let index = start; index < end; index += 1) {
           taken[index] = true;
         }
@@ -50,5 +67,18 @@ export function findLocalRiskPhrases(body: string): RiskPhraseHit[] {
     }
   }
 
-  return hits.sort((left, right) => left.startOffset - right.startOffset);
+  const seenTerms = new Set<string>();
+  return hits
+    .sort((left, right) => left.startOffset - right.startOffset)
+    .filter((hit) => {
+      const key = hit.excerpt.toLowerCase();
+      if (hit.label === "LOW" || GENERIC_LOW_TERMS.has(key)) {
+        return false;
+      }
+      if (seenTerms.has(key)) {
+        return false;
+      }
+      seenTerms.add(key);
+      return true;
+    });
 }

@@ -6,6 +6,7 @@ import { getGlanceCard } from "../care-note/glance";
 import { searchPatientEntries } from "../care-note/search";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
+import { createHumanHighlight } from "../care-note/highlights";
 import { prisma } from "../db";
 
 const FEATURED_PATIENT_EMAIL = "elena.rossi@nightingale.test";
@@ -151,7 +152,16 @@ export async function handlePatientSearch(request: Request, patientId: string): 
     assertPatientIsolation(actor, patientId);
     const url = new URL(request.url);
     const query = url.searchParams.get("q") ?? "";
-    const results = await searchPatientEntries(patientId, actor, query);
+    const sortParam = url.searchParams.get("sort");
+    const sort =
+      sortParam === "newest" || sortParam === "oldest" || sortParam === "relevance"
+        ? sortParam
+        : undefined;
+    const results = await searchPatientEntries(patientId, actor, query, {
+      sort,
+      from: url.searchParams.get("from") ?? undefined,
+      to: url.searchParams.get("to") ?? undefined,
+    });
     return Response.json({ results });
   } catch (error) {
     return errorResponse(error);
@@ -217,6 +227,30 @@ export async function handleRevertEntry(request: Request, entryId: string): Prom
     }
     const entry = await revertEntry(actor, entryId, payload.targetVersion);
     return Response.json({ entry });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleCreateHighlight(request: Request, entryId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const payload = (await request.json()) as {
+      startOffset?: number;
+      endOffset?: number;
+      excerpt?: string;
+      label?: string;
+    };
+    if (payload.startOffset === undefined || payload.endOffset === undefined) {
+      return Response.json({ error: "startOffset and endOffset are required" }, { status: 400 });
+    }
+    const highlight = await createHumanHighlight(actor, entryId, {
+      startOffset: payload.startOffset,
+      endOffset: payload.endOffset,
+      excerpt: payload.excerpt,
+      label: payload.label,
+    });
+    return Response.json({ highlight }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }

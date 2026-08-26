@@ -23,7 +23,7 @@ const SAMPLE_KEYS: MessageKey[] = [
   "note.conflict",
   "note.noAccess",
   "login.patientTitle",
-  "progress.submitted",
+  "search.sortNewest",
 ];
 
 describe("i18n dictionaries", () => {

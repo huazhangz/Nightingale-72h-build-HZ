@@ -124,22 +124,26 @@ const PATIENTS: PatientSeed[] = [
   },
 ];
 
+async function deleteCareEntryRows(entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) {
+    return;
+  }
+  await prisma.highlightFeedback.deleteMany({
+    where: { highlight: { careEntryId: { in: entryIds } } },
+  });
+  await prisma.highlight.deleteMany({ where: { careEntryId: { in: entryIds } } });
+  await prisma.comment.deleteMany({ where: { careEntryId: { in: entryIds } } });
+  await prisma.entryRevision.deleteMany({ where: { careEntryId: { in: entryIds } } });
+  await prisma.auditLog.deleteMany({ where: { entityId: { in: entryIds } } });
+  await prisma.careEntry.deleteMany({ where: { id: { in: entryIds } } });
+}
+
 async function deletePatientRecord(patientId: string): Promise<void> {
   const entries = await prisma.careEntry.findMany({
     where: { patientId },
     select: { id: true },
   });
-  const entryIds = entries.map((entry) => entry.id);
-  if (entryIds.length > 0) {
-    await prisma.highlightFeedback.deleteMany({
-      where: { highlight: { careEntryId: { in: entryIds } } },
-    });
-    await prisma.highlight.deleteMany({ where: { careEntryId: { in: entryIds } } });
-    await prisma.comment.deleteMany({ where: { careEntryId: { in: entryIds } } });
-    await prisma.entryRevision.deleteMany({ where: { careEntryId: { in: entryIds } } });
-    await prisma.auditLog.deleteMany({ where: { entityId: { in: entryIds } } });
-    await prisma.careEntry.deleteMany({ where: { id: { in: entryIds } } });
-  }
+  await deleteCareEntryRows(entries.map((entry) => entry.id));
   await prisma.user.delete({ where: { id: patientId } });
 }
 
@@ -290,6 +294,12 @@ async function main() {
     if (index === 0) {
       featuredId = user.id;
     }
+
+    const extras = await prisma.careEntry.findMany({
+      where: { patientId: user.id, NOT: { title: patient.title } },
+      select: { id: true },
+    });
+    await deleteCareEntryRows(extras.map((entry) => entry.id));
 
     const existing = await prisma.careEntry.findFirst({
       where: { patientId: user.id, title: patient.title },

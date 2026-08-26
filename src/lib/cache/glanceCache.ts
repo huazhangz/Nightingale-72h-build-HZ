@@ -7,6 +7,8 @@ export type GlanceHighlight = {
   startOffset: number;
   endOffset: number;
   provenancePointer: string | null;
+  source?: string;
+  createdByRole?: string;
   importanceScore: number;
 };
 

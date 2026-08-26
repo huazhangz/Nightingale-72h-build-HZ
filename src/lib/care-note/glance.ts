@@ -19,6 +19,8 @@ import {
   isUnreleasedClinicianDraft,
 } from "../auth/rbac";
 import { createProvenancePointer } from "./provenance-utils";
+import { recencyScore } from "./recency";
+import { isUnresolvedActionText } from "./unresolved";
 import { scoreKeywords } from "../learning/importance";
 import { resolveAssignedClinician } from "./transparency";
 
@@ -35,16 +37,11 @@ const RISK_LABELS = new Set([
   "info",
 ]);
 
-function recencyScore(latestEncounterAt: Date | null): number {
-  if (!latestEncounterAt) {
-    return 0;
-  }
-  const ageDays = Math.max(0, (Date.now() - latestEncounterAt.getTime()) / 86_400_000);
-  return Math.round(100 * Math.exp(-ageDays / 14));
-}
-
 function isRiskHighlight(label: string | null, confidence: number | null): boolean {
   const normalized = label?.trim().toLowerCase() ?? "";
+  if (normalized === "patient_insight" || normalized === "unresolved_action") {
+    return false;
+  }
   if (RISK_LABELS.has(normalized)) {
     return true;
   }
@@ -52,8 +49,7 @@ function isRiskHighlight(label: string | null, confidence: number | null): boole
 }
 
 function isUnresolvedAction(text: string, label: string | null): boolean {
-  const haystack = `${label ?? ""} ${text}`.toLowerCase();
-  return /todo|follow[- ]?up|unresolved|open action|plan:/.test(haystack);
+  return isUnresolvedActionText(text, label);
 }
 
 export async function invalidateGlanceForCareEntry(careEntryId: string): Promise<void> {
@@ -133,6 +129,8 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
             highlight.provenancePointer ??
             createProvenancePointer(highlight.careEntryId, highlight.startOffset, highlight.endOffset),
           importanceScore: highlight.importanceScore,
+          source: highlight.source,
+          createdByRole: highlight.createdBy.role,
         }));
 
   const unresolvedActions: GlanceAction[] = [];

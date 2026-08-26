@@ -20,9 +20,16 @@ describe("local keyword risk matcher", () => {
   it("labels medium and low symptom phrases with matching risk colors", () => {
     const hits = findLocalRiskPhrases("Persistent cough with nausea and fatigue.");
     const labels = Object.fromEntries(hits.map((hit) => [hit.excerpt.toLowerCase(), hit.label]));
-    expect(labels.cough).toBe("LOW");
+    expect(labels.cough).toBeUndefined();
+    expect(labels.fatigue).toBeUndefined();
     expect(labels.nausea).toBe("MEDIUM");
-    expect(labels.fatigue).toBe("LOW");
+  });
+
+  it("keeps only the first occurrence of the same term in a note", () => {
+    const hits = findLocalRiskPhrases("fever then more fever and fever again with nausea.");
+    const fevers = hits.filter((hit) => hit.excerpt.toLowerCase() === "fever");
+    expect(fevers).toHaveLength(1);
+    expect(hits.filter((hit) => hit.excerpt.toLowerCase() === "nausea")).toHaveLength(1);
   });
 });
 

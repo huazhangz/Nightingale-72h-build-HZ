@@ -72,5 +72,31 @@ describe("patient search and isolation", () => {
     await expect(searchPatientEntries(other.patient.id, clinicianActor, "aortic")).rejects.toThrow(
       ForbiddenError,
     );
+
+    const extra = await prisma.careEntry.create({
+      data: {
+        clinicId: fixture.clinic.id,
+        patientId: fixture.patient.id,
+        authorId: fixture.clinician.id,
+        title: "Older visit",
+        body: "Historical cough note.",
+        version: 1,
+        encounterAt: new Date("2025-01-01T10:00:00.000Z"),
+      },
+    });
+    const newest = await searchPatientEntries(fixture.patient.id, clinicianActor, "", {
+      sort: "newest",
+    });
+    const oldest = await searchPatientEntries(fixture.patient.id, clinicianActor, "", {
+      sort: "oldest",
+    });
+    expect(newest[0]?.title).not.toBe("Older visit");
+    expect(oldest[0]?.title).toBe("Older visit");
+    const ranged = await searchPatientEntries(fixture.patient.id, clinicianActor, "", {
+      from: "2099-01-01",
+      to: "2099-12-31",
+    });
+    expect(ranged).toHaveLength(0);
+    await prisma.careEntry.delete({ where: { id: extra.id } });
   });
 });

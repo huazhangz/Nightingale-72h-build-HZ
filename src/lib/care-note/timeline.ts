@@ -14,6 +14,8 @@ import { ForbiddenError } from "../auth/rbac";
 import { prisma } from "../db";
 import { resolveAssignedClinician } from "./transparency";
 import { redactPhi } from "../security/redact";
+import { archiveFlagsForEntry } from "./decay";
+import { recencyScore } from "./recency";
 
 function patientFacingSummary(body: string): string {
   const first = body.split(/\n+/)[0]?.trim() ?? "";
@@ -50,19 +52,14 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
     where: { patientId },
     include: {
       author: { select: { id: true, role: true, name: true } },
-      comments: includeComments
-        ? {
-            include: { author: { select: { id: true, role: true } } },
-            orderBy: { createdAt: "asc" as const },
-          }
-        : false,
-      highlights:
-        actor.role === "PATIENT"
-          ? false
-          : {
-              include: { createdBy: { select: { role: true } } },
-              orderBy: { createdAt: "asc" },
-            },
+      comments: {
+        include: { author: { select: { id: true, role: true } } },
+        orderBy: { createdAt: "asc" as const },
+      },
+      highlights: {
+        include: { createdBy: { select: { role: true } } },
+        orderBy: { createdAt: "asc" },
+      },
       revisions: includeRevisions
         ? {
             orderBy: { version: "asc" as const },
@@ -84,6 +81,15 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
       ? { name: latestRevision.editor.name, role: latestRevision.editor.role }
       : { name: entry.author.name, role: entry.author.role };
 
+    const highlightRows = Array.isArray(entry.highlights) ? entry.highlights : [];
+    const commentRows = entry.comments;
+    const flags = archiveFlagsForEntry({
+      encounterAt: entry.encounterAt,
+      body: entry.body,
+      comments: commentRows,
+      highlights: highlightRows,
+    });
+
     if (actor.role === "PATIENT") {
       return {
         id: entry.id,
@@ -94,13 +100,15 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         assignedClinician,
         lastUpdatedBy,
         patientFacingSummary: patientFacingSummary(entry.body),
+        archived: flags.archived,
+        decayed: flags.decayed,
       };
     }
 
     const showRaw = includeRawBody(actor, authorRole, entry.status);
     const redactedBody = redactPhi(entry.body);
-    const comments = includeComments && Array.isArray(entry.comments)
-      ? entry.comments.map((comment) => ({
+    const comments = includeComments
+      ? commentRows.map((comment) => ({
           id: comment.id,
           authorRole: comment.author.role,
           body: redactPhi(comment.body),
@@ -108,7 +116,6 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         }))
       : [];
 
-    const highlightRows = Array.isArray(entry.highlights) ? entry.highlights : [];
     const highlights = highlightRows
       .filter((highlight) => {
         if (!includeAiDoctor && isAiDoctorHighlight(highlight.source, highlight.createdBy.role)) {
@@ -126,6 +133,8 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         provenancePointer: highlight.provenancePointer,
         startOffset: highlight.startOffset,
         endOffset: highlight.endOffset,
+        source: highlight.source,
+        createdByRole: highlight.createdBy.role,
       }));
 
     const historical =
@@ -175,6 +184,9 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
       comments,
       highlights,
       revisions,
+      recencyScore: recencyScore(entry.encounterAt),
+      archived: flags.archived,
+      decayed: flags.decayed,
     };
   });
 }

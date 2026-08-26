@@ -246,6 +246,179 @@ textarea:focus,
   background: #fff;
 }
 
+.glance-card.glance-top {
+  margin-bottom: 1.25rem;
+  padding: 1.15rem 1.2rem 1.3rem;
+  box-shadow: 0 8px 24px rgba(31, 92, 69, 0.12);
+  border-color: var(--accent);
+}
+
+.timeline-heading {
+  margin-top: 0.5rem;
+}
+
+.search-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.recency-with-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.info-tip {
+  position: relative;
+  display: inline-block;
+}
+
+.info-tip summary {
+  list-style: none;
+  cursor: pointer;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  background: var(--paper);
+}
+
+.info-tip summary::-webkit-details-marker {
+  display: none;
+}
+
+.info-popover {
+  position: absolute;
+  z-index: 4;
+  left: 0;
+  top: 1.7rem;
+  width: min(18rem, 70vw);
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.info-popover p {
+  margin: 0 0 0.4rem;
+}
+
+.timeline-item-archived {
+  opacity: 0.72;
+  background: #f4f1ea;
+}
+
+.archived-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+
+.highlight-draft {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+.chip-model {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.chip-manual-staff {
+  box-shadow: inset 0 0 0 2px #2f6f8f;
+}
+
+.chip-manual-clinician {
+  box-shadow: inset 0 0 0 2px #6b3a2a;
+}
+
+.inline-origin-staff {
+  box-shadow: inset 0 -2px 0 #2f6f8f;
+}
+
+.inline-origin-clinician {
+  box-shadow: inset 0 -2px 0 #6b3a2a;
+}
+
+.inline-origin-model {
+  box-shadow: none;
+}
+
+.risk-badge.risk-critical,
+.chip.risk-critical {
+  background: #9b1c1c;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.risk-badge.risk-medium,
+.chip.risk-medium {
+  background: #c58a12;
+  color: #1c2118;
+  border: 0;
+  cursor: pointer;
+}
+
+.risk-badge.risk-low,
+.chip.risk-low {
+  background: #2f7a4a;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.risk-badge.risk-action,
+.chip.risk-action {
+  background: #1d4ed8;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.risk-badge.risk-insight,
+.chip.risk-insight {
+  background: #6d28d9;
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+}
+
+.inline-risk {
+  padding: 0 0.12rem;
+  border-radius: 2px;
+}
+
+.inline-risk-critical {
+  background: #f8c9c9;
+}
+
+.inline-risk-medium {
+  background: #f7e3a1;
+}
+
+.inline-risk-low {
+  background: #cde8d6;
+}
+
+.inline-risk-action {
+  background: #dbeafe;
+}
+
+.inline-risk-insight {
+  background: #ede9fe;
+}
+
 .meta {
   margin: 0.2rem 0 0.6rem;
   color: var(--muted);
@@ -411,47 +584,6 @@ textarea:focus,
 .author-badge-clinician {
   background: #f4ddd4;
   color: #6b3a2a;
-}
-
-.risk-badge.risk-critical,
-.chip.risk-critical {
-  background: #9b1c1c;
-  color: #fff;
-  border: 0;
-  cursor: pointer;
-}
-
-.risk-badge.risk-medium,
-.chip.risk-medium {
-  background: #c58a12;
-  color: #1c2118;
-  border: 0;
-  cursor: pointer;
-}
-
-.risk-badge.risk-low,
-.chip.risk-low {
-  background: #2f7a4a;
-  color: #fff;
-  border: 0;
-  cursor: pointer;
-}
-
-.inline-risk {
-  padding: 0 0.12rem;
-  border-radius: 2px;
-}
-
-.inline-risk-critical {
-  background: #f8c9c9;
-}
-
-.inline-risk-medium {
-  background: #f7e3a1;
-}
-
-.inline-risk-low {
-  background: #cde8d6;
 }
 
 .note-detail-modal {
