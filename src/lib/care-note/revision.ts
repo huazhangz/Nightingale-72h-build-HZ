@@ -1,6 +1,7 @@
 import type { CareEntry, Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
+import { syncConsultationStage } from "./progress-engine";
 
 const PHI_METADATA_KEYS = new Set(["userId", "entryId", "newVersion", "targetVersion"]);
 
@@ -77,6 +78,7 @@ export async function updateCareEntry(
     return next;
   });
   await syncLocalRiskHighlights(updated.id, updated.body, userId);
+  await syncConsultationStage(updated.id);
   return updated;
 }
 

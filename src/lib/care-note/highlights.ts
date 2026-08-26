@@ -3,6 +3,7 @@ import { type Actor, ForbiddenError, assertClinicScope, assertPatientIsolation }
 import { prisma } from "../db";
 import { redactPhi } from "../security/redact";
 import { invalidateGlanceForCareEntry } from "./glance";
+import { syncConsultationStage } from "./progress-engine";
 import { createProvenancePointer } from "./provenance-utils";
 
 const MANUAL_LABELS = new Set([
@@ -64,5 +65,6 @@ export async function createHumanHighlight(
     },
   });
   await invalidateGlanceForCareEntry(entry.id);
+  await syncConsultationStage(entry.id);
   return highlight;
 }

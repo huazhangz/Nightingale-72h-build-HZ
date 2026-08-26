@@ -79,7 +79,8 @@ describe("role-scoped timeline and glance payloads", () => {
     expect(entry.version).toBeUndefined();
     expect(entry.status).toBeUndefined();
     expect(entry.authorRole).toBeUndefined();
-    expect(entry.patientFacingSummary).toContain("Observed cough");
+    expect(entry.summaryReleased).toBe(false);
+    expect(entry.patientFacingSummary).toBe("");
     expect(JSON.stringify(entry)).not.toMatch(/Internal staff comment/);
     expect(JSON.stringify(entry)).not.toMatch(/follow-up CRP/);
     expect(JSON.stringify(entry)).not.toMatch(/recencyScore/);

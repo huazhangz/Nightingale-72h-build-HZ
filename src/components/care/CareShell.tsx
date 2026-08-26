@@ -101,24 +101,6 @@ export function CareShell({ children }: { children: ReactNode }) {
             <p className="brand">{t("brand")}</p>
           </div>
           <div className="header-controls">
-          <fieldset className="role-selector">
-            <legend>{t("language.legend")}</legend>
-            <label className="sr-only" htmlFor="language-select">
-              {t("language.aria")}
-            </label>
-            <select
-              id="language-select"
-              value={locale}
-              onChange={(event) => setLocale(event.target.value as typeof locale)}
-              aria-label={t("language.aria")}
-            >
-              {locales.map((code) => (
-                <option key={code} value={code}>
-                  {t(`language.${code}` as MessageKey)}
-                </option>
-              ))}
-            </select>
-          </fieldset>
           {canSwitchPatient && patients.length > 0 ? (
             <fieldset className="role-selector">
               <legend>{t("patient.legend")}</legend>
@@ -139,6 +121,24 @@ export function CareShell({ children }: { children: ReactNode }) {
               </select>
             </fieldset>
           ) : null}
+          <fieldset className="role-selector language-selector">
+            <legend>{t("language.legend")}</legend>
+            <label className="sr-only" htmlFor="language-select">
+              {t("language.aria")}
+            </label>
+            <select
+              id="language-select"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as typeof locale)}
+              aria-label={t("language.aria")}
+            >
+              {locales.map((code) => (
+                <option key={code} value={code}>
+                  {t(`language.${code}` as MessageKey)}
+                </option>
+              ))}
+            </select>
+          </fieldset>
           <fieldset className="role-selector">
             <legend>{t("role.legend")}</legend>
             <div className="role-selector-row" role="radiogroup" aria-label={t("role.aria")}>

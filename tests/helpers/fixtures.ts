@@ -55,6 +55,7 @@ export async function deleteNoteFixture(ids: {
   });
   await prisma.highlight.deleteMany({ where: { careEntryId: ids.entryId } });
   await prisma.comment.deleteMany({ where: { careEntryId: ids.entryId } });
+  await prisma.careEntryViewer.deleteMany({ where: { careEntryId: ids.entryId } });
   await prisma.entryRevision.deleteMany({ where: { careEntryId: ids.entryId } });
   await prisma.auditLog.deleteMany({ where: { entityId: ids.entryId } });
   await prisma.careEntry.deleteMany({ where: { id: ids.entryId } });

@@ -50,10 +50,10 @@ describe("patient search and isolation", () => {
     const hits = await searchPatientEntries(fixture.patient.id, patientActor, "stenosis");
     expect(hits).toHaveLength(0);
 
-    const ownHits = await searchPatientEntries(fixture.patient.id, patientActor, "cough");
+    const ownHits = await searchPatientEntries(fixture.patient.id, patientActor, "Visit");
     expect(ownHits).toHaveLength(1);
     expect(ownHits[0]?.body).toBeUndefined();
-    expect(ownHits[0]?.patientFacingSummary).toBeTruthy();
+    expect(ownHits[0]?.patientFacingSummary).toBe("");
     expect(JSON.stringify(ownHits)).not.toMatch(/aortic stenosis/i);
     expect(JSON.stringify(ownHits)).not.toMatch(/Internal clinician/);
 

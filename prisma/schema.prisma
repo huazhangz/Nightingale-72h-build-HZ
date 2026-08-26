@@ -73,6 +73,7 @@ model User {
   highlights         Highlight[]
   highlightFeedbacks HighlightFeedback[]
   auditLogs          AuditLog[]
+  entryViews         CareEntryViewer[]
 
   @@index([clinicId, role])
   @@index([employeeCode])
@@ -98,6 +99,7 @@ model CareEntry {
   revisions  EntryRevision[]
   comments   Comment[]
   highlights Highlight[]
+  viewers    CareEntryViewer[]
 
   @@index([clinicId, patientId])
   @@index([patientId, encounterAt])
@@ -130,6 +132,18 @@ model Comment {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  @@index([careEntryId])
+}
+
+model CareEntryViewer {
+  id          String    @id @default(cuid())
+  careEntryId String
+  careEntry   CareEntry @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  viewedAt    DateTime  @default(now())
+
+  @@unique([careEntryId, userId])
   @@index([careEntryId])
 }
 

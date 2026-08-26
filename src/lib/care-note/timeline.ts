@@ -15,6 +15,7 @@ import { prisma } from "../db";
 import { resolveAssignedClinician } from "./transparency";
 import { redactPhi } from "../security/redact";
 import { archiveFlagsForEntry } from "./decay";
+import { isSummaryReleased } from "./progress-engine";
 import { recencyScore } from "./recency";
 
 function patientFacingSummary(body: string): string {
@@ -90,6 +91,9 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
       highlights: highlightRows,
     });
 
+    const released = isSummaryReleased(entry.consultationStage);
+    const facing = patientFacingSummary(entry.body);
+
     if (actor.role === "PATIENT") {
       return {
         id: entry.id,
@@ -99,7 +103,8 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         consultationStage: entry.consultationStage,
         assignedClinician,
         lastUpdatedBy,
-        patientFacingSummary: patientFacingSummary(entry.body),
+        patientFacingSummary: released ? facing : "",
+        summaryReleased: released,
         archived: flags.archived,
         decayed: flags.decayed,
       };
@@ -179,7 +184,8 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
       authorName: entry.author.name,
       assignedClinician,
       lastUpdatedBy,
-      patientFacingSummary: patientFacingSummary(entry.body),
+      patientFacingSummary: facing,
+      summaryReleased: released,
       body: showRaw ? redactedBody : undefined,
       comments,
       highlights,

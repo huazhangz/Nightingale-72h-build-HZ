@@ -107,7 +107,7 @@ export function GlanceView({
         </p>
       </div>
       ) : null}
-      {isPatient && card.transparency ? (
+      {card.transparency ? (
         <ConsultationBoard
           stage={card.transparency.consultationStage}
           assignedClinician={card.transparency.assignedClinician}

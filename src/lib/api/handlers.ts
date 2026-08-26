@@ -7,6 +7,7 @@ import { searchPatientEntries } from "../care-note/search";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
 import { createHumanHighlight } from "../care-note/highlights";
+import { recordEntryViews, releaseFinalSummary } from "../care-note/progress-engine";
 import { prisma } from "../db";
 
 const FEATURED_PATIENT_EMAIL = "elena.rossi@nightingale.test";
@@ -251,6 +252,28 @@ export async function handleCreateHighlight(request: Request, entryId: string): 
       label: payload.label,
     });
     return Response.json({ highlight }, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleRecordEntryViews(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    const payload = (await request.json()) as { entryIds?: string[] };
+    const updates = await recordEntryViews(actor, payload.entryIds ?? []);
+    return Response.json({ updates });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleReleaseFinalSummary(request: Request, entryId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const entry = await releaseFinalSummary(actor, entryId);
+    return Response.json({ entry });
   } catch (error) {
     return errorResponse(error);
   }

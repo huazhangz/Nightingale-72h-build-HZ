@@ -47,6 +47,7 @@ export type TimelineEntry = {
   assignedClinician?: { name: string; title: string; department: string };
   lastUpdatedBy?: { name: string; role: string };
   patientFacingSummary: string;
+  summaryReleased?: boolean;
   body?: string;
   comments?: Array<{ id: string; authorRole: string; body: string; createdAt: string }>;
   highlights?: TimelineHighlight[];
@@ -124,6 +125,7 @@ export function TimelineView({
     label: string;
   } | null>(null);
   const [savingHighlight, setSavingHighlight] = useState(false);
+  const [submittingFinal, setSubmittingFinal] = useState<string | null>(null);
   const isPatient = role === "PATIENT";
   const canHighlight = role === "STAFF" || role === "CLINICIAN";
 
@@ -163,6 +165,31 @@ export function TimelineView({
       void refresh();
     });
   }, [patientId, refresh]);
+
+  useEffect(() => {
+    if (isPatient || loading || entries.length === 0) {
+      return;
+    }
+    const ids = entries.map((entry) => entry.id);
+    void apiFetch<{ updates: Array<{ id: string; consultationStage: string }> }>(
+      `/api/patients/${patientId}/views`,
+      { userId, method: "POST", body: { entryIds: ids } },
+    )
+      .then((data) => {
+        if (!data.updates?.length) {
+          return;
+        }
+        setEntries((current) =>
+          current.map((entry) => {
+            const next = data.updates.find((row) => row.id === entry.id);
+            return next ? { ...entry, consultationStage: next.consultationStage } : entry;
+          }),
+        );
+      })
+      .catch(() => {
+        /* viewing is best-effort */
+      });
+  }, [isPatient, loading, patientId, userId, entries.map((entry) => entry.id).join(",")]);
 
   useEffect(() => {
     if (!targetEntryId || loading) {
@@ -209,6 +236,25 @@ export function TimelineView({
     }
   }
 
+  async function submitFinal(entryId: string) {
+    setSubmittingFinal(entryId);
+    try {
+      const result = await apiFetch<{
+        entry: { id: string; consultationStage: string; patientId?: string };
+      }>(`/api/entries/${entryId}/final-summary`, { userId, method: "POST", body: {} });
+      notifyEntryChanged({
+        patientId,
+        entryId: result.entry.id,
+        reason: "updated",
+      });
+      setEntries(await loadTimeline(patientId, userId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("note.saveError"));
+    } finally {
+      setSubmittingFinal(null);
+    }
+  }
+
   if (loading) {
     return <p className="status">{t("timeline.loading")}</p>;
   }
@@ -239,7 +285,9 @@ export function TimelineView({
               (highlight.startOffset === startOffset && highlight.endOffset === endOffset),
           )));
     const display = isPatient
-      ? entry.patientFacingSummary
+      ? entry.summaryReleased
+        ? entry.patientFacingSummary
+        : t("progress.summaryPending")
       : (entry.body ?? entry.patientFacingSummary);
     const showEdit =
       canShowStaffActions(role, entry.authorRole) ||
@@ -386,13 +434,18 @@ export function TimelineView({
             </button>
           </form>
         ) : null}
-        {isPatient && entry.assignedClinician && entry.lastUpdatedBy ? (
+        {entry.assignedClinician && entry.lastUpdatedBy ? (
           <ConsultationBoard
             stage={entry.consultationStage ?? "SUBMITTED"}
             assignedClinician={entry.assignedClinician}
             lastUpdatedBy={entry.lastUpdatedBy}
             lastUpdatedAt={entry.updatedAt ?? entry.encounterAt}
             formatDateTime={formatDateTime}
+            canSubmitFinal={
+              role === "CLINICIAN" && entry.consultationStage !== "FINAL_SUMMARY"
+            }
+            submittingFinal={submittingFinal === entry.id}
+            onSubmitFinal={() => void submitFinal(entry.id)}
           />
         ) : null}
         {!isPatient && (entry.highlights?.length ?? 0) > 0 ? (

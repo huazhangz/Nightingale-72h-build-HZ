@@ -72,12 +72,11 @@ describe("seeded virtual patients", () => {
       role: "PATIENT",
       clinicId: featured!.clinicId,
     });
-    const patientEntry = timeline.find((entry) =>
-      entry.patientFacingSummary.includes("blood pressure review"),
-    );
+    const patientEntry = timeline.find((entry) => entry.title.includes("Blood pressure"));
     expect(patientEntry?.body).toBeUndefined();
     expect(patientEntry?.comments).toBeUndefined();
-    expect(patientEntry?.patientFacingSummary).toBe("Your blood pressure review is underway.");
+    expect(patientEntry?.summaryReleased).toBe(false);
+    expect(patientEntry?.patientFacingSummary).toBe("");
     expect(JSON.stringify(patientEntry)).not.toMatch(/Nursing staff/);
     expect(JSON.stringify(patientEntry)).not.toMatch(/systolic remains above target/);
 

@@ -12,6 +12,7 @@ import { prisma } from "../db";
 import { redactPhi } from "../security/redact";
 import { applyOptimisticEdit } from "./concurrency";
 import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
+import { syncConsultationStage } from "./progress-engine";
 import { revertCareEntry } from "./revision";
 
 function writeRole(actor: Actor): NoteAuthorRole {
@@ -53,6 +54,7 @@ export async function createCareEntry(
     },
   });
   await syncLocalRiskHighlights(entry.id, entry.body, actor.id);
+  await syncConsultationStage(entry.id);
   return entry;
 }
 
@@ -81,5 +83,7 @@ export async function revertEntry(actor: Actor, entryId: string, targetVersion: 
       ? entry.author.role
       : "CLINICIAN";
   assertCanEditNote(actor, { authorRole, clinicId: entry.clinicId }, { hasVersionSnapshot: true });
-  return revertCareEntry(entryId, targetVersion, actor.id);
+  const reverted = await revertCareEntry(entryId, targetVersion, actor.id);
+  await syncConsultationStage(entryId);
+  return reverted;
 }

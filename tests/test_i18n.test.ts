@@ -23,6 +23,7 @@ const SAMPLE_KEYS: MessageKey[] = [
   "note.conflict",
   "note.noAccess",
   "login.patientTitle",
+  "progress.finalSubmit",
   "search.sortNewest",
 ];
 

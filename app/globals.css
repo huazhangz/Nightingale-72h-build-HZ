@@ -68,6 +68,24 @@ a {
   align-items: flex-end;
 }
 
+.language-selector {
+  padding: 0.2rem 0.4rem 0.35rem;
+}
+
+.language-selector legend {
+  font-size: 0.7rem;
+  padding: 0 0.2rem;
+}
+
+.language-selector select {
+  min-height: 32px;
+  min-width: 5.5rem;
+  max-width: 8.5rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -356,41 +374,41 @@ textarea:focus,
 
 .risk-badge.risk-critical,
 .chip.risk-critical {
-  background: #9b1c1c;
-  color: #fff;
-  border: 0;
+  background: rgba(176, 72, 72, 0.18);
+  color: #6a2424;
+  border: 1px solid rgba(176, 72, 72, 0.32);
   cursor: pointer;
 }
 
 .risk-badge.risk-medium,
 .chip.risk-medium {
-  background: #c58a12;
-  color: #1c2118;
-  border: 0;
+  background: rgba(184, 132, 42, 0.18);
+  color: #6a4e14;
+  border: 1px solid rgba(184, 132, 42, 0.32);
   cursor: pointer;
 }
 
 .risk-badge.risk-low,
 .chip.risk-low {
-  background: #2f7a4a;
-  color: #fff;
-  border: 0;
+  background: rgba(56, 122, 78, 0.16);
+  color: #215536;
+  border: 1px solid rgba(56, 122, 78, 0.3);
   cursor: pointer;
 }
 
 .risk-badge.risk-action,
 .chip.risk-action {
-  background: #1d4ed8;
-  color: #fff;
-  border: 0;
+  background: rgba(47, 98, 168, 0.16);
+  color: #1e3f72;
+  border: 1px solid rgba(47, 98, 168, 0.3);
   cursor: pointer;
 }
 
 .risk-badge.risk-insight,
 .chip.risk-insight {
-  background: #6d28d9;
-  color: #fff;
-  border: 0;
+  background: rgba(112, 72, 160, 0.16);
+  color: #4d2d72;
+  border: 1px solid rgba(112, 72, 160, 0.3);
   cursor: pointer;
 }
 
@@ -400,23 +418,23 @@ textarea:focus,
 }
 
 .inline-risk-critical {
-  background: #f8c9c9;
+  background: rgba(176, 72, 72, 0.15);
 }
 
 .inline-risk-medium {
-  background: #f7e3a1;
+  background: rgba(184, 132, 42, 0.15);
 }
 
 .inline-risk-low {
-  background: #cde8d6;
+  background: rgba(56, 122, 78, 0.14);
 }
 
 .inline-risk-action {
-  background: #dbeafe;
+  background: rgba(47, 98, 168, 0.14);
 }
 
 .inline-risk-insight {
-  background: #ede9fe;
+  background: rgba(112, 72, 160, 0.14);
 }
 
 .meta {

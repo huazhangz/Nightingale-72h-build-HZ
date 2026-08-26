@@ -132,7 +132,8 @@ async function deleteCareEntryRows(entryIds: string[]): Promise<void> {
     where: { highlight: { careEntryId: { in: entryIds } } },
   });
   await prisma.highlight.deleteMany({ where: { careEntryId: { in: entryIds } } });
-  await prisma.comment.deleteMany({ where: { careEntryId: { in: entryIds } } });
+    await prisma.comment.deleteMany({ where: { careEntryId: { in: entryIds } } });
+    await prisma.careEntryViewer.deleteMany({ where: { careEntryId: { in: entryIds } } });
   await prisma.entryRevision.deleteMany({ where: { careEntryId: { in: entryIds } } });
   await prisma.auditLog.deleteMany({ where: { entityId: { in: entryIds } } });
   await prisma.careEntry.deleteMany({ where: { id: { in: entryIds } } });

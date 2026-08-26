@@ -17,12 +17,18 @@ export function ConsultationBoard({
   lastUpdatedBy,
   lastUpdatedAt,
   formatDateTime,
+  canSubmitFinal = false,
+  submittingFinal = false,
+  onSubmitFinal,
 }: {
   stage: (typeof CONSULTATION_STAGES)[number] | string;
   assignedClinician: { name: string; title: string; department: string };
   lastUpdatedBy: { name: string; role: string };
   lastUpdatedAt: string;
   formatDateTime: (value: Date | string | number) => string;
+  canSubmitFinal?: boolean;
+  submittingFinal?: boolean;
+  onSubmitFinal?: () => void;
 }) {
   const { t } = useI18n();
   const current = Math.max(0, stageIndex(stage));
@@ -56,6 +62,16 @@ export function ConsultationBoard({
         <strong>{t("progress.lastUpdated")}:</strong> {t(updaterKey, { name: lastUpdatedBy.name })}{" "}
         · {formatDateTime(lastUpdatedAt)}
       </p>
+      {canSubmitFinal && onSubmitFinal ? (
+        <button
+          type="button"
+          className="btn"
+          disabled={submittingFinal}
+          onClick={onSubmitFinal}
+        >
+          {t("progress.finalSubmit")}
+        </button>
+      ) : null}
     </div>
   );
 }
