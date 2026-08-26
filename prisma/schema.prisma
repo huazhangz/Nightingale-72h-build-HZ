@@ -1,0 +1,179 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PATIENT
+  STAFF
+  CLINICIAN
+  ADMIN
+}
+
+enum EntryStatus {
+  DRAFT
+  SUBMITTED
+  LOCKED
+}
+
+enum HighlightSource {
+  HUMAN
+  MODEL
+}
+
+enum FeedbackVerdict {
+  AGREE
+  DISAGREE
+  EDIT
+}
+
+model Clinic {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users   User[]
+  entries CareEntry[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         Role
+  passwordHash String
+  clinicId     String?
+  clinic       Clinic?  @relation(fields: [clinicId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  authoredEntries    CareEntry[]         @relation("EntryAuthor")
+  patientEntries     CareEntry[]         @relation("EntryPatient")
+  revisions          EntryRevision[]
+  comments           Comment[]
+  highlights         Highlight[]
+  highlightFeedbacks HighlightFeedback[]
+  auditLogs          AuditLog[]
+
+  @@index([clinicId, role])
+}
+
+model CareEntry {
+  id          String      @id @default(cuid())
+  clinicId    String
+  clinic      Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId   String
+  patient     User        @relation("EntryPatient", fields: [patientId], references: [id], onDelete: Restrict)
+  authorId    String
+  author      User        @relation("EntryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  title       String
+  body        String      @default("")
+  version     Int         @default(1)
+  status      EntryStatus @default(DRAFT)
+  encounterAt DateTime
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  revisions  EntryRevision[]
+  comments   Comment[]
+  highlights Highlight[]
+
+  @@index([clinicId, patientId])
+  @@index([patientId, encounterAt])
+}
+
+model EntryRevision {
+  id          String    @id @default(cuid())
+  careEntryId String
+  careEntry   CareEntry @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
+  editorId    String
+  editor      User      @relation(fields: [editorId], references: [id], onDelete: Restrict)
+  version     Int
+  body        String
+  summary     String?
+  createdAt   DateTime  @default(now())
+
+  highlights Highlight[]
+
+  @@unique([careEntryId, version])
+  @@index([careEntryId])
+}
+
+model Comment {
+  id          String    @id @default(cuid())
+  careEntryId String
+  careEntry   CareEntry @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  body        String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([careEntryId])
+}
+
+model Highlight {
+  id          String          @id @default(cuid())
+  careEntryId String
+  careEntry   CareEntry       @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
+  revisionId  String?
+  revision    EntryRevision?  @relation(fields: [revisionId], references: [id], onDelete: SetNull)
+  createdById String
+  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  startOffset        Int
+  endOffset          Int
+  excerpt            String
+  provenancePointer  String?
+  label              String?
+  source             HighlightSource @default(HUMAN)
+  confidence         Float?
+  createdAt          DateTime        @default(now())
+
+  feedbacks HighlightFeedback[]
+
+  @@index([careEntryId])
+  @@index([revisionId])
+}
+
+model HighlightFeedback {
+  id          String          @id @default(cuid())
+  highlightId String
+  highlight   Highlight       @relation(fields: [highlightId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  verdict     FeedbackVerdict
+  note        String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([highlightId, userId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+model FeatureWeight {
+  id          String   @id @default(cuid())
+  featureKey  String   @unique
+  weight      Float
+  description String?
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
