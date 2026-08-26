@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { useI18n } from "../../lib/i18n/I18nContext";
 import { loadTimeline, type TimelineEntry } from "./TimelineView";
 
 export function SearchView({ patientId, userId }: { patientId: string; userId: string }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -14,9 +16,9 @@ export function SearchView({ patientId, userId }: { patientId: string; userId: s
       setError(null);
       setEntries(await loadTimeline(patientId, userId));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to search notes");
+      setError(caught instanceof Error ? caught.message : t("search.error"));
     }
-  }, [patientId, userId]);
+  }, [patientId, userId, t]);
 
   useEffect(() => {
     void refresh();
@@ -41,13 +43,13 @@ export function SearchView({ patientId, userId }: { patientId: string; userId: s
   return (
     <section className="search-panel">
       <div className="field">
-        <label htmlFor="note-search">Search notes</label>
+        <label htmlFor="note-search">{t("search.label")}</label>
         <input
           id="note-search"
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Title or note text"
+          placeholder={t("search.placeholder")}
         />
       </div>
       {error ? (
@@ -55,7 +57,7 @@ export function SearchView({ patientId, userId }: { patientId: string; userId: s
           {error}
         </p>
       ) : null}
-      <ul className="search-results" aria-label="Search results">
+      <ul className="search-results" aria-label={t("search.aria")}>
         {results.map((entry) => (
           <li key={entry.id}>
             <h2>{entry.title}</h2>
@@ -63,7 +65,9 @@ export function SearchView({ patientId, userId }: { patientId: string; userId: s
           </li>
         ))}
       </ul>
-      {results.length === 0 ? <p className="muted">No matching notes.</p> : null}
+      {results.length === 0 ? <p className="muted">{t("search.empty")}</p> : null}
     </section>
   );
 }
+
+export const SearchBar = SearchView;

@@ -6,9 +6,9 @@ import { TimelineView } from "../../src/components/care/TimelineView";
 
 export default function TimelineRoute() {
   return (
-    <CarePage title="Timeline">
+    <CarePage titleKey="pages.timeline">
       {({ patientId, userId, role }) => (
-        <Suspense fallback={<p className="status">Loading timeline…</p>}>
+        <Suspense fallback={<p className="status">Loading…</p>}>
           <TimelineView patientId={patientId} userId={userId} role={role} />
         </Suspense>
       )}

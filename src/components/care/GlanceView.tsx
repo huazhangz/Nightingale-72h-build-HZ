@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api/client";
 import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cache/glanceCache";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
+import type { MessageKey } from "../../lib/i18n/messages";
 
 export async function loadGlance(patientId: string, userId: string): Promise<GlanceTopCard> {
   return apiFetch<GlanceTopCard>(`/api/patients/${patientId}/glance`, { userId });
@@ -30,6 +32,7 @@ function timelineHref(item: {
 }
 
 export function GlanceView({ patientId, userId }: { patientId: string; userId: string }) {
+  const { t, formatDateTime } = useI18n();
   const [card, setCard] = useState<GlanceTopCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,11 +42,11 @@ export function GlanceView({ patientId, userId }: { patientId: string; userId: s
       setError(null);
       setCard(await loadGlance(patientId, userId));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load glance");
+      setError(caught instanceof Error ? caught.message : t("glance.error"));
     } finally {
       setLoading(false);
     }
-  }, [patientId, userId]);
+  }, [patientId, userId, t]);
 
   useEffect(() => {
     void refresh();
@@ -53,36 +56,37 @@ export function GlanceView({ patientId, userId }: { patientId: string; userId: s
   }, [patientId, refresh]);
 
   if (loading) {
-    return <p className="status">Loading glance card…</p>;
+    return <p className="status">{t("glance.loading")}</p>;
   }
   if (error) {
     return <p className="status error" role="alert">{error}</p>;
   }
   if (!card) {
-    return <p className="status">No glance data.</p>;
+    return <p className="status">{t("glance.empty")}</p>;
   }
 
   return (
-    <section className="glance-card" aria-label="Patient glance top card">
+    <section className="glance-card" aria-label={t("glance.aria")}>
       <div className="glance-score">
-        <p className="label">Recency score</p>
+        <p className="label">{t("glance.recency")}</p>
         <p className="score" data-testid="recency-score">
           {card.recencyScore}
         </p>
+        <p className="muted" data-testid="recency-generated">
+          {formatDateTime(card.generatedAt)}
+        </p>
       </div>
       <div>
-        <h2>Highest-risk highlights</h2>
+        <h2>{t("glance.riskTitle")}</h2>
         {card.highestRiskHighlights.length === 0 ? (
-          <p className="muted">No high-risk highlights.</p>
+          <p className="muted">{t("glance.noRisk")}</p>
         ) : (
           <ul className="jump-list">
             {card.highestRiskHighlights.map((highlight: GlanceHighlight) => (
               <li key={highlight.id}>
-                <Link
-                  className="jump-link"
-                  href={timelineHref(highlight)}
-                >
-                  <strong>{highlight.label ?? "risk"}</strong> — {highlight.excerpt}
+                <Link className="jump-link" href={timelineHref(highlight)}>
+                  <span className="badge">{t(riskLabelKey(highlight.label))}</span>
+                  {highlight.excerpt}
                 </Link>
               </li>
             ))}
@@ -90,14 +94,15 @@ export function GlanceView({ patientId, userId }: { patientId: string; userId: s
         )}
       </div>
       <div>
-        <h2>Unresolved actions</h2>
+        <h2>{t("glance.actionsTitle")}</h2>
         {card.unresolvedActions.length === 0 ? (
-          <p className="muted">No open actions.</p>
+          <p className="muted">{t("glance.noActions")}</p>
         ) : (
           <ul className="jump-list">
             {card.unresolvedActions.map((action: GlanceAction) => (
               <li key={action.id}>
                 <Link className="jump-link" href={timelineHref(action)}>
+                  <span className="badge">{t(`action.${action.kind}` as MessageKey)}</span>
                   {action.text}
                 </Link>
               </li>

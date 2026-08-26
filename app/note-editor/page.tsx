@@ -5,7 +5,7 @@ import { NoteEditor } from "../../src/components/care/NoteEditor";
 
 export default function NoteEditorRoute() {
   return (
-    <CarePage title="Note editor">
+    <CarePage titleKey="pages.noteEditor">
       {({ patientId, userId }) => <NoteEditor patientId={patientId} userId={userId} />}
     </CarePage>
   );

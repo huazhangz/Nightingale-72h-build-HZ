@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useI18n } from "../../lib/i18n/I18nContext";
+import type { MessageKey } from "../../lib/i18n/messages";
 import { apiFetch } from "../../lib/api/client";
 
 type DemoUser = { id: string; name: string; email: string; role: string };
@@ -28,14 +30,15 @@ export function useCareContext(): DemoState {
 
 const ROLE_ORDER = ["PATIENT", "STAFF", "CLINICIAN"] as const;
 
-const NAV = [
-  { href: "/timeline", label: "Timeline" },
-  { href: "/glance", label: "Glance" },
-  { href: "/note-editor", label: "Note editor" },
-  { href: "/search", label: "Search" },
+const NAV: Array<{ href: string; labelKey: MessageKey }> = [
+  { href: "/timeline", labelKey: "nav.timeline" },
+  { href: "/glance", labelKey: "nav.glance" },
+  { href: "/note-editor", labelKey: "nav.noteEditor" },
+  { href: "/search", labelKey: "nav.search" },
 ];
 
 export function CareShell({ children }: { children: ReactNode }) {
+  const { t, locale, setLocale, locales } = useI18n();
   const pathname = usePathname();
   const [users, setUsers] = useState<DemoUser[]>([]);
   const [patientId, setPatientId] = useState<string>("");
@@ -61,9 +64,9 @@ export function CareShell({ children }: { children: ReactNode }) {
         }
       })
       .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : "Unable to load demo session");
+        setError(caught instanceof Error ? caught.message : t("session.loadError"));
       });
-  }, []);
+  }, [t]);
 
   const actor = users.find((user) => user.id === userId);
   const value = useMemo(
@@ -84,11 +87,30 @@ export function CareShell({ children }: { children: ReactNode }) {
         <header className="topbar">
           <div>
             <p className="eyebrow">{clinicName}</p>
-            <p className="brand">Nightingale care notes</p>
+            <p className="brand">{t("brand")}</p>
           </div>
+          <div className="header-controls">
           <fieldset className="role-selector">
-            <legend>Role</legend>
-            <div className="role-selector-row" role="radiogroup" aria-label="Role selector">
+            <legend>{t("language.legend")}</legend>
+            <label className="sr-only" htmlFor="language-select">
+              {t("language.aria")}
+            </label>
+            <select
+              id="language-select"
+              value={locale}
+              onChange={(event) => setLocale(event.target.value as typeof locale)}
+              aria-label={t("language.aria")}
+            >
+              {locales.map((code) => (
+                <option key={code} value={code}>
+                  {t(`language.${code}` as MessageKey)}
+                </option>
+              ))}
+            </select>
+          </fieldset>
+          <fieldset className="role-selector">
+            <legend>{t("role.legend")}</legend>
+            <div className="role-selector-row" role="radiogroup" aria-label={t("role.aria")}>
               {ROLE_ORDER.map((role) => {
                 const match = users.find((user) => user.role === role);
                 const selected = match?.id === userId;
@@ -106,21 +128,22 @@ export function CareShell({ children }: { children: ReactNode }) {
                       }
                     }}
                   >
-                    {role}
+                    {t(`role.${role}` as MessageKey)}
                   </button>
                 );
               })}
             </div>
           </fieldset>
+          </div>
         </header>
-        <nav className="nav" aria-label="Primary">
+        <nav className="nav" aria-label={t("nav.aria")}>
           {NAV.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               className={pathname === item.href ? "nav-link active" : "nav-link"}
             >
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           ))}
         </nav>
@@ -138,24 +161,25 @@ export function CareShell({ children }: { children: ReactNode }) {
 }
 
 export function CarePage({
-  title,
+  titleKey,
   children,
 }: {
-  title: string;
+  titleKey: MessageKey;
   children: (session: { patientId: string; userId: string; role: string }) => ReactNode;
 }) {
+  const { t } = useI18n();
   const { patientId, userId, role } = useCareContext();
   if (!patientId || !userId) {
     return (
       <>
-        <h1>{title}</h1>
-        <p className="status">Preparing clinic session…</p>
+        <h1>{t(titleKey)}</h1>
+        <p className="status">{t("session.preparing")}</p>
       </>
     );
   }
   return (
     <>
-      <h1>{title}</h1>
+      <h1>{t(titleKey)}</h1>
       {children({ patientId, userId, role })}
     </>
   );

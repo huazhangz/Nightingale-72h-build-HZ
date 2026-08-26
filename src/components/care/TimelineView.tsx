@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api/client";
 import { parseProvenancePointer } from "../../lib/care-note/provenance-utils";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 
 export type TimelineEntry = {
   id: string;
@@ -57,6 +58,7 @@ export function TimelineView({
   userId: string;
   role?: string;
 }) {
+  const { t, formatDateTime } = useI18n();
   const searchParams = useSearchParams();
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -83,11 +85,11 @@ export function TimelineView({
       setError(null);
       setEntries(await loadTimeline(patientId, userId));
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load timeline");
+      setError(caught instanceof Error ? caught.message : t("timeline.error"));
     } finally {
       setLoading(false);
     }
-  }, [patientId, userId]);
+  }, [patientId, userId, t]);
 
   useEffect(() => {
     void refresh();
@@ -105,27 +107,27 @@ export function TimelineView({
   }, [targetEntryId, loading, entries]);
 
   if (loading) {
-    return <p className="status">Loading timeline…</p>;
+    return <p className="status">{t("timeline.loading")}</p>;
   }
   if (error) {
     return <p className="status error" role="alert">{error}</p>;
   }
   if (entries.length === 0) {
-    return <p className="status">No encounters yet. Create a note to start the timeline.</p>;
+    return <p className="status">{t("timeline.empty")}</p>;
   }
 
   return (
     <>
       {role === "PATIENT" ? (
         <p className="rbac-banner" role="status">
-          Patient view: internal staff comments and raw clinical notes are hidden.
+          {t("timeline.patientBanner")}
         </p>
       ) : (
         <p className="rbac-banner staff" role="status">
-          {role ?? "Clinician"} view: raw notes and internal comments are visible.
+          {t("timeline.staffBanner", { role: role ?? t("role.CLINICIAN") })}
         </p>
       )}
-      <ol className="timeline" aria-label="Patient encounter timeline">
+      <ol className="timeline" aria-label={t("timeline.aria")}>
         {entries.map((entry) => {
           const focused = entry.id === targetEntryId;
           const display = entry.body ?? entry.patientFacingSummary;
@@ -138,21 +140,22 @@ export function TimelineView({
               <header className="timeline-item-head">
                 <h2>{entry.title}</h2>
                 <p className="meta">
-                  {new Date(entry.encounterAt).toLocaleString()} · {entry.authorRole} · v{entry.version}
+                  {formatDateTime(entry.encounterAt)} · {entry.authorRole} ·{" "}
+                  {t("timeline.version", { n: entry.version })}
                 </p>
               </header>
               <p>{focused ? markedText(display, startOffset, endOffset) : display}</p>
               {entry.highlights.length > 0 ? (
-                <ul className="chip-row" aria-label="Highlights">
+                <ul className="chip-row" aria-label={t("timeline.highlights")}>
                   {entry.highlights.map((highlight) => (
                     <li key={highlight.id} className="chip">
-                      {highlight.label ?? "highlight"}: {highlight.excerpt}
+                      {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
                     </li>
                   ))}
                 </ul>
               ) : null}
               {entry.comments.length > 0 ? (
-                <ul className="comment-list" aria-label="Internal comments">
+                <ul className="comment-list" aria-label={t("timeline.comments")}>
                   {entry.comments.map((comment) => (
                     <li key={comment.id}>
                       <strong>{comment.authorRole}:</strong> {comment.body}
@@ -167,3 +170,5 @@ export function TimelineView({
     </>
   );
 }
+
+export const TimelineFeed = TimelineView;

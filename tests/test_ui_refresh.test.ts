@@ -22,6 +22,7 @@ vi.mock("next/link", () => ({
 import { NoteEditor } from "../src/components/care/NoteEditor";
 import { GlanceView } from "../src/components/care/GlanceView";
 import { TimelineView } from "../src/components/care/TimelineView";
+import { I18nProvider } from "../src/lib/i18n/I18nContext";
 import { careEvents, createEventBus } from "../src/lib/events/bus";
 import { notifyEntryChanged, subscribePatientRefresh } from "../src/lib/events/patientRefresh";
 
@@ -116,7 +117,7 @@ describe("UI refresh after note save", () => {
   it("refreshes glance and timeline when a note is saved", async () => {
     const otherPatient = vi.fn();
     const stop = subscribePatientRefresh("patient-other", otherPatient);
-    render(createElement(Workspace));
+    render(createElement(I18nProvider, null, createElement(Workspace)));
 
     await screen.findByTestId("recency-score");
     fireEvent.click(screen.getByRole("button", { name: "Save note" }));

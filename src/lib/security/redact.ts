@@ -5,12 +5,21 @@ const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const NRIC_FIN_PATTERN = /\b[STFGM]\d{7}[A-Z]\b/gi;
 /** +65 91234567, +65-9123-4567, +6591234567 */
 const SG_INTL_PHONE_PATTERN = /\+65[\s-]?\d{4}[\s-]?\d{4}/g;
+/** Finnish +358, German +49, French +33 (spaces, dashes, or compact). */
+const EU_INTL_PHONE_PATTERN = /\+(?:358|49|33)[\s.-]?(?:\d[\s.-]?){6,13}\d/g;
 /** Local 8-digit numbers: mobile 8/9, landline 6, e.g. 81234567 */
 const SG_LOCAL_PHONE_PATTERN = /\b[689]\d{7}\b/g;
+/** PRC resident ID (18 digits, last may be X). */
+const CN_ID_PATTERN = /\b\d{17}[\dXx]\b/g;
 const HONORIFIC_NAME_PATTERN =
   /\b(?:Dr|Mr|Mrs|Ms|Mdm|Prof)\.?\s+[A-Z][a-z]+(?:\s+(?:bin|binti|de|van|von)\s+[A-Z][a-z]+|\s+[A-Z][a-z]+){0,3}\b/g;
 const PROPER_NAME_PATTERN =
   /\b[A-Z][a-z]{1,20}(?:\s+(?:bin|binti|de|van|von)\s+[A-Z][a-z]{1,20}|\s+[A-Z][a-z]{1,20}){1,3}\b/g;
+/** Chinese names next to honorifics or 姓名/患者 labels (avoids stripping clinical Han text). */
+const CN_LABELED_NAME_PATTERN =
+  /(?:姓名|患者|病人)[：:]\s*[\u4e00-\u9fff]{2,4}(?:·[\u4e00-\u9fff]{1,4})?/g;
+const CN_HONORIFIC_NAME_PATTERN =
+  /[\u4e00-\u9fff]{2,4}(?:·[\u4e00-\u9fff]{1,4})?\s*(?:先生|女士|小姐)/g;
 
 const NAME_ALLOWLIST = new Set([
   "Patient Summary",
@@ -29,6 +38,8 @@ function replaceAll(source: string, pattern: RegExp, replacer?: (match: string) 
 
 function redactNames(text: string): string {
   let next = replaceAll(text, HONORIFIC_NAME_PATTERN);
+  next = replaceAll(next, CN_LABELED_NAME_PATTERN);
+  next = replaceAll(next, CN_HONORIFIC_NAME_PATTERN);
   next = replaceAll(next, PROPER_NAME_PATTERN, (match) =>
     NAME_ALLOWLIST.has(match) ? match : REDACTED,
   );
@@ -43,7 +54,9 @@ export function redactPhi(text: string): string {
 
   let redacted = replaceAll(text, EMAIL_PATTERN);
   redacted = replaceAll(redacted, NRIC_FIN_PATTERN);
+  redacted = replaceAll(redacted, CN_ID_PATTERN);
   redacted = replaceAll(redacted, SG_INTL_PHONE_PATTERN);
+  redacted = replaceAll(redacted, EU_INTL_PHONE_PATTERN);
   redacted = replaceAll(redacted, SG_LOCAL_PHONE_PATTERN);
   redacted = redactNames(redacted);
   return redacted;
