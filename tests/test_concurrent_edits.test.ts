@@ -23,7 +23,7 @@ describe("concurrent edits", () => {
     });
     await prisma.careEntry.update({
       where: { id: fixture.entry.id },
-      data: { body: BASE_BODY, version: 1 },
+      data: { body: BASE_BODY, version: 1, authorId: fixture.staff.id },
     });
   });
 
@@ -85,7 +85,7 @@ describe("concurrent edits", () => {
     expect(JSON.stringify(audit)).not.toContain("staff vitals");
   });
 
-  it("keeps clinician content when staff submits a stale base version", async () => {
+  it("keeps clinician content when merging a stale clinician edit on a staff note", async () => {
     await applyOptimisticEdit({
       entryId: fixture.entry.id,
       userId: fixture.clinician.id,
@@ -108,5 +108,31 @@ describe("concurrent edits", () => {
       where: { careEntryId: fixture.entry.id, body: CLINICIAN_BODY },
     });
     expect(lostClinician).not.toBeNull();
+  });
+
+  it("blocks staff from patching a clinician-authored diagnosis", async () => {
+    const diagnosis = await prisma.careEntry.create({
+      data: {
+        clinicId: fixture.clinic.id,
+        patientId: fixture.patient.id,
+        authorId: fixture.clinician.id,
+        title: "Clinician diagnosis",
+        body: CLINICIAN_BODY,
+        version: 1,
+        status: "SUBMITTED",
+        encounterAt: new Date("2026-08-26T12:00:00.000Z"),
+      },
+    });
+    await expect(
+      applyOptimisticEdit({
+        entryId: diagnosis.id,
+        userId: fixture.staff!.id,
+        newContent: STAFF_BODY,
+        baseVersion: 1,
+      }),
+    ).rejects.toThrow(/cannot write or edit clinician notes/);
+    await prisma.entryRevision.deleteMany({ where: { careEntryId: diagnosis.id } });
+    await prisma.auditLog.deleteMany({ where: { entityId: diagnosis.id } });
+    await prisma.careEntry.delete({ where: { id: diagnosis.id } });
   });
 });

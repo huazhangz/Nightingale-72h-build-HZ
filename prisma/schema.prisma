@@ -14,6 +14,13 @@ enum Role {
   ADMIN
 }
 
+enum ConsultationStage {
+  SUBMITTED
+  CLINICIAN_REVIEWING
+  MDT_CONSULTATION
+  FINAL_SUMMARY
+}
+
 enum EntryStatus {
   DRAFT
   SUBMITTED
@@ -49,6 +56,11 @@ model User {
   name         String
   role         Role
   passwordHash String
+  phone        String?
+  dateOfBirth  String?
+  employeeCode String?
+  title        String?
+  department   String?
   clinicId     String?
   clinic       Clinic?  @relation(fields: [clinicId], references: [id], onDelete: SetNull)
   createdAt    DateTime @default(now())
@@ -63,6 +75,7 @@ model User {
   auditLogs          AuditLog[]
 
   @@index([clinicId, role])
+  @@index([employeeCode])
 }
 
 model CareEntry {
@@ -78,6 +91,7 @@ model CareEntry {
   version     Int         @default(1)
   status      EntryStatus @default(DRAFT)
   encounterAt DateTime
+  consultationStage ConsultationStage @default(SUBMITTED)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 

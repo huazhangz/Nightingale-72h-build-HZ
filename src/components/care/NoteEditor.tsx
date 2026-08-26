@@ -1,13 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api/client";
 import { notifyEntryChanged } from "../../lib/events/patientRefresh";
 import { useI18n } from "../../lib/i18n/I18nContext";
 import { loadTimeline, type TimelineEntry } from "./TimelineView";
 
-export function NoteEditor({ patientId, userId }: { patientId: string; userId: string }) {
+export function NoteEditor({
+  patientId,
+  userId,
+  role,
+}: {
+  patientId: string;
+  userId: string;
+  role?: string;
+}) {
   const { t } = useI18n();
+  const searchParams = useSearchParams();
+  const requestedEntryId = searchParams?.get("entryId");
+  const canWrite = role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
   const [title, setTitle] = useState("Follow-up visit");
   const [body, setBody] = useState("Plan: review symptoms and continue current care.");
   const [entryId, setEntryId] = useState<string | null>(null);
@@ -23,6 +35,34 @@ export function NoteEditor({ patientId, userId }: { patientId: string; userId: s
         setStatus(caught instanceof Error ? caught.message : t("note.loadError"));
       });
   }, [patientId, userId, t]);
+
+  const editableEntries = entries.filter((entry) => {
+    if (role === "STAFF") {
+      return entry.authorRole === "STAFF";
+    }
+    if (role === "CLINICIAN") {
+      return entry.authorRole === "CLINICIAN";
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    if (!requestedEntryId) {
+      return;
+    }
+    const match = editableEntries.find((entry) => entry.id === requestedEntryId);
+    if (!match) {
+      return;
+    }
+    setEntryId(match.id);
+    setTitle(match.title);
+    setBody(match.body ?? match.patientFacingSummary);
+    setVersion(match.version);
+  }, [requestedEntryId, entries, role]);
+
+  if (!canWrite) {
+    return null;
+  }
 
   async function saveNote() {
     setSaving(true);
@@ -120,7 +160,7 @@ export function NoteEditor({ patientId, userId }: { patientId: string; userId: s
           onChange={(event) => {
             const nextId = event.target.value || null;
             setEntryId(nextId);
-            const match = entries.find((entry) => entry.id === nextId);
+            const match = editableEntries.find((entry) => entry.id === nextId);
             if (match) {
               setTitle(match.title);
               setBody(match.body ?? match.patientFacingSummary);
@@ -131,7 +171,7 @@ export function NoteEditor({ patientId, userId }: { patientId: string; userId: s
           }}
         >
           <option value="">{t("note.createNew")}</option>
-          {entries.map((entry) => (
+          {editableEntries.map((entry) => (
             <option key={entry.id} value={entry.id}>
               {t("note.versionOption", { title: entry.title, n: entry.version })}
             </option>

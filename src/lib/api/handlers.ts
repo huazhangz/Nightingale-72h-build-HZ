@@ -1,16 +1,47 @@
 import type { Role } from "@prisma/client";
 import { requireActor, errorResponse } from "../auth/session";
+import { assertPatientIsolation } from "../auth/rbac";
+import { verifyPatientLogin, verifyStaffLogin } from "../auth/login";
 import { getGlanceCard } from "../care-note/glance";
+import { searchPatientEntries } from "../care-note/search";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
-import { createProvenancePointer } from "../care-note/provenance-utils";
 import { prisma } from "../db";
 
-const DEMO_USERS: Array<{ email: string; name: string; role: Role }> = [
-  { email: "patient@nightingale.test", name: "Pat Patient", role: "PATIENT" },
-  { email: "staff@nightingale.test", name: "Sam Staff", role: "STAFF" },
-  { email: "clinician@nightingale.test", name: "Casey Clinician", role: "CLINICIAN" },
-  { email: "admin@nightingale.test", name: "Avery Admin", role: "ADMIN" },
+const FEATURED_PATIENT_EMAIL = "zhang.wei@nightingale.test";
+
+const DEMO_STAFF: Array<{
+  email: string;
+  name: string;
+  role: Role;
+  employeeCode: string;
+  title: string;
+  department: string;
+}> = [
+  {
+    email: "staff@nightingale.test",
+    name: "Sam Staff",
+    role: "STAFF",
+    employeeCode: "000001",
+    title: "Registered Nurse",
+    department: "Outpatient Nursing",
+  },
+  {
+    email: "clinician@nightingale.test",
+    name: "Casey Clinician",
+    role: "CLINICIAN",
+    employeeCode: "000002",
+    title: "Attending Physician",
+    department: "Internal Medicine",
+  },
+  {
+    email: "admin@nightingale.test",
+    name: "Avery Admin",
+    role: "ADMIN",
+    employeeCode: "000003",
+    title: "Clinic Administrator",
+    department: "Operations",
+  },
 ];
 
 export async function handleDemoBootstrap(): Promise<Response> {
@@ -22,77 +53,79 @@ export async function handleDemoBootstrap(): Promise<Response> {
     });
 
     const users = [];
-    for (const user of DEMO_USERS) {
+    for (const user of DEMO_STAFF) {
       users.push(
         await prisma.user.upsert({
           where: { email: user.email },
-          update: { name: user.name, role: user.role, clinicId: clinic.id },
+          update: {
+            name: user.name,
+            role: user.role,
+            clinic: { connect: { id: clinic.id } },
+            employeeCode: user.employeeCode,
+            title: user.title,
+            department: user.department,
+          },
           create: {
             email: user.email,
             name: user.name,
             role: user.role,
-            clinicId: clinic.id,
+            clinic: { connect: { id: clinic.id } },
+            employeeCode: user.employeeCode,
+            title: user.title,
+            department: user.department,
             passwordHash: "dev-only-not-a-real-hash",
           },
         }),
       );
     }
 
-    const patient = users.find((user) => user.role === "PATIENT");
-    const clinician = users.find((user) => user.role === "CLINICIAN");
-    const staff = users.find((user) => user.role === "STAFF");
+    const featured = await prisma.user.upsert({
+      where: { email: FEATURED_PATIENT_EMAIL },
+      update: {
+        name: "张伟 (Zhang Wei)",
+        role: "PATIENT",
+        clinic: { connect: { id: clinic.id } },
+        phone: "13812345678",
+        dateOfBirth: "1985-06-15",
+      },
+      create: {
+        email: FEATURED_PATIENT_EMAIL,
+        name: "张伟 (Zhang Wei)",
+        role: "PATIENT",
+        clinic: { connect: { id: clinic.id } },
+        phone: "13812345678",
+        dateOfBirth: "1985-06-15",
+        passwordHash: "dev-only-not-a-real-hash",
+      },
+    });
 
-    if (patient && clinician && staff) {
-      const existing = await prisma.careEntry.findFirst({
-        where: { patientId: patient.id },
-      });
-      if (!existing) {
-        const body = "Observed cough and fever. Plan: chase labs tomorrow.";
-        const excerpt = "cough and fever";
-        const startOffset = body.indexOf(excerpt);
-        const endOffset = startOffset + excerpt.length;
-        const entry = await prisma.careEntry.create({
-          data: {
-            clinicId: clinic.id,
-            patientId: patient.id,
-            authorId: clinician.id,
-            title: "Acute review",
-            body,
-            version: 1,
-            encounterAt: new Date(),
-          },
-        });
-        await prisma.comment.create({
-          data: {
-            careEntryId: entry.id,
-            authorId: staff.id,
-            body: "Internal staff comment: chase CRP and flag if rising.",
-          },
-        });
-        await prisma.highlight.create({
-          data: {
-            careEntryId: entry.id,
-            createdById: clinician.id,
-            startOffset,
-            endOffset,
-            excerpt,
-            label: "risk",
-            source: "MODEL",
-            confidence: 0.92,
-            provenancePointer: createProvenancePointer(entry.id, startOffset, endOffset),
-          },
-        });
+    const patients = await prisma.user.findMany({
+      where: { clinicId: clinic.id, role: "PATIENT" },
+      select: { id: true, name: true, email: true, phone: true },
+      orderBy: { name: "asc" },
+    });
+    patients.sort((left, right) => {
+      if (left.email === FEATURED_PATIENT_EMAIL) {
+        return -1;
       }
-    }
+      if (right.email === FEATURED_PATIENT_EMAIL) {
+        return 1;
+      }
+      return left.name.localeCompare(right.name);
+    });
+
+    const clinician = users.find((user) => user.role === "CLINICIAN");
     return Response.json({
       clinic: { id: clinic.id, name: clinic.name },
-      users: users.map((user) => ({
+      users: [...users, featured].map((user) => ({
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
       })),
-      patientId: patient?.id ?? null,
+      patients,
+      patientId: featured.id,
+      featuredPatientId: featured.id,
       defaultUserId: clinician?.id ?? users[0]?.id ?? null,
     });
   } catch (error) {
@@ -103,6 +136,7 @@ export async function handleDemoBootstrap(): Promise<Response> {
 export async function handlePatientTimeline(request: Request, patientId: string): Promise<Response> {
   try {
     const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
     const entries = await getPatientTimeline(patientId, actor);
     return Response.json({ entries });
   } catch (error) {
@@ -113,6 +147,7 @@ export async function handlePatientTimeline(request: Request, patientId: string)
 export async function handlePatientGlance(request: Request, patientId: string): Promise<Response> {
   try {
     const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
     const started = Date.now();
     const { card, cacheHit } = await getGlanceCard(patientId, actor);
     return Response.json(
@@ -123,6 +158,19 @@ export async function handlePatientGlance(request: Request, patientId: string): 
         },
       },
     );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handlePatientSearch(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    const url = new URL(request.url);
+    const query = url.searchParams.get("q") ?? "";
+    const results = await searchPatientEntries(patientId, actor, query);
+    return Response.json({ results });
   } catch (error) {
     return errorResponse(error);
   }
@@ -187,6 +235,44 @@ export async function handleRevertEntry(request: Request, entryId: string): Prom
     }
     const entry = await revertEntry(actor, entryId, payload.targetVersion);
     return Response.json({ entry });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleLogin(request: Request): Promise<Response> {
+  try {
+    const payload = (await request.json()) as {
+      role?: Role;
+      fullName?: string;
+      phone?: string;
+      dateOfBirth?: string;
+      employeeCode?: string;
+      verification?: string;
+    };
+    if (payload.role === "PATIENT") {
+      const user = await verifyPatientLogin({
+        fullName: payload.fullName ?? "",
+        phone: payload.phone ?? "",
+        dateOfBirth: payload.dateOfBirth ?? "",
+      });
+      if (!user) {
+        return Response.json({ error: "Patient verification failed" }, { status: 401 });
+      }
+      return Response.json({ userId: user.id, role: user.role });
+    }
+    if (payload.role === "STAFF" || payload.role === "CLINICIAN") {
+      const user = await verifyStaffLogin({
+        role: payload.role,
+        employeeCode: payload.employeeCode ?? "",
+        verification: payload.verification ?? "",
+      });
+      if (!user) {
+        return Response.json({ error: "Staff verification failed" }, { status: 401 });
+      }
+      return Response.json({ userId: user.id, role: user.role });
+    }
+    return Response.json({ error: "Unsupported role" }, { status: 400 });
   } catch (error) {
     return errorResponse(error);
   }

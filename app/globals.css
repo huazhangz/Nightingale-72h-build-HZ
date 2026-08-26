@@ -266,6 +266,7 @@ textarea:focus,
 .role-selector select {
   min-height: 44px;
   min-width: 8rem;
+  max-width: 20rem;
   padding: 0.35rem 0.6rem;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -357,6 +358,78 @@ textarea:focus,
   font-size: 2.4rem;
   margin: 0;
   font-family: var(--font-serif), "Source Serif 4", Georgia, serif;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(28 33 24 / 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 20;
+}
+
+.modal {
+  width: min(28rem, 100%);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem 1.2rem 1.2rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.consult-board {
+  margin: 0.7rem 0 0.9rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.consult-stepper {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.consult-stepper .step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+}
+
+.consult-stepper .step.current,
+.consult-stepper .step.done {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+}
+
+.step.current .step-index,
+.step.done .step-index {
+  border-color: var(--accent);
+  background: var(--chip);
 }
 
 @media (max-width: 640px) {

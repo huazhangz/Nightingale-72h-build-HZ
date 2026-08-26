@@ -9,6 +9,7 @@ const SAMPLE_KEYS: MessageKey[] = [
   "pages.noteEditor",
   "pages.search",
   "role.legend",
+  "patient.legend",
   "language.legend",
   "risk.CRITICAL",
   "risk.HIGH",
@@ -18,6 +19,8 @@ const SAMPLE_KEYS: MessageKey[] = [
   "action.highlight",
   "version.history",
   "version.revert",
+  "login.patientTitle",
+  "progress.submitted",
 ];
 
 describe("i18n dictionaries", () => {

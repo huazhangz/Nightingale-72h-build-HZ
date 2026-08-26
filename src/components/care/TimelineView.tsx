@@ -2,18 +2,33 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { apiFetch } from "../../lib/api/client";
 import { parseProvenancePointer } from "../../lib/care-note/provenance-utils";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { ConsultationBoard } from "./ConsultationBoard";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
+
+export type TimelineRevision = {
+  version: number;
+  createdAt: string;
+  editorRole: string;
+  summary: string | null;
+  body: string;
+};
 
 export type TimelineEntry = {
   id: string;
   title: string;
   encounterAt: string;
+  updatedAt?: string;
   version: number;
   status: string;
+  consultationStage?: string;
   authorRole: string;
+  authorName?: string;
+  assignedClinician?: { name: string; title: string; department: string };
+  lastUpdatedBy?: { name: string; role: string };
   patientFacingSummary: string;
   body?: string;
   comments: Array<{ id: string; authorRole: string; body: string; createdAt: string }>;
@@ -25,6 +40,7 @@ export type TimelineEntry = {
     startOffset: number;
     endOffset: number;
   }>;
+  revisions?: TimelineRevision[];
 };
 
 export async function loadTimeline(patientId: string, userId: string): Promise<TimelineEntry[]> {
@@ -49,6 +65,14 @@ function markedText(text: string, start?: number, end?: number): ReactNode {
   );
 }
 
+function canShowStaffActions(role: string | undefined, authorRole: string): boolean {
+  return role === "STAFF" && authorRole === "STAFF";
+}
+
+function canShowClinicianActions(role: string | undefined, authorRole: string): boolean {
+  return (role === "CLINICIAN" || role === "ADMIN") && authorRole === "CLINICIAN";
+}
+
 export function TimelineView({
   patientId,
   userId,
@@ -63,6 +87,7 @@ export function TimelineView({
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const isPatient = role === "PATIENT";
 
   const targetEntryId = searchParams?.get("entryId") ?? null;
   let targetStart = searchParams?.get("offset") ?? null;
@@ -117,57 +142,82 @@ export function TimelineView({
   }
 
   return (
-    <>
-      {role === "PATIENT" ? (
-        <p className="rbac-banner" role="status">
-          {t("timeline.patientBanner")}
-        </p>
-      ) : (
-        <p className="rbac-banner staff" role="status">
-          {t("timeline.staffBanner", { role: role ?? t("role.CLINICIAN") })}
-        </p>
-      )}
-      <ol className="timeline" aria-label={t("timeline.aria")}>
-        {entries.map((entry) => {
-          const focused = entry.id === targetEntryId;
-          const display = entry.body ?? entry.patientFacingSummary;
-          return (
-            <li
-              key={entry.id}
-              id={`entry-${entry.id}`}
-              className={focused ? "timeline-item focused" : "timeline-item"}
-            >
-              <header className="timeline-item-head">
-                <h2>{entry.title}</h2>
-                <p className="meta">
-                  {formatDateTime(entry.encounterAt)} · {entry.authorRole} ·{" "}
-                  {t("timeline.version", { n: entry.version })}
-                </p>
-              </header>
-              <p>{focused ? markedText(display, startOffset, endOffset) : display}</p>
-              {entry.highlights.length > 0 ? (
-                <ul className="chip-row" aria-label={t("timeline.highlights")}>
-                  {entry.highlights.map((highlight) => (
-                    <li key={highlight.id} className="chip">
-                      {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
-                    </li>
-                  ))}
-                </ul>
+    <ol className="timeline" aria-label={t("timeline.aria")}>
+      {entries.map((entry) => {
+        const focused = entry.id === targetEntryId;
+        const display = isPatient
+          ? entry.patientFacingSummary
+          : (entry.body ?? entry.patientFacingSummary);
+        const showEdit =
+          canShowStaffActions(role, entry.authorRole) ||
+          canShowClinicianActions(role, entry.authorRole);
+        return (
+          <li
+            key={entry.id}
+            id={`entry-${entry.id}`}
+            className={focused ? "timeline-item focused" : "timeline-item"}
+          >
+            <header className="timeline-item-head">
+              <h2>{entry.title}</h2>
+              <p className="meta">
+                {formatDateTime(entry.encounterAt)}
+                {isPatient ? null : (
+                  <>
+                    {" · "}
+                    {entry.authorRole}
+                    {" · "}
+                    {t("timeline.version", { n: entry.version })}
+                  </>
+                )}
+              </p>
+              {showEdit ? (
+                <Link className="jump-link" href={`/note-editor?entryId=${entry.id}`}>
+                  {t("note.editExisting")}
+                </Link>
               ) : null}
-              {entry.comments.length > 0 ? (
-                <ul className="comment-list" aria-label={t("timeline.comments")}>
-                  {entry.comments.map((comment) => (
-                    <li key={comment.id}>
-                      <strong>{comment.authorRole}:</strong> {comment.body}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
-    </>
+            </header>
+            <p>{focused && !isPatient ? markedText(display, startOffset, endOffset) : display}</p>
+            {isPatient && entry.assignedClinician && entry.lastUpdatedBy ? (
+              <ConsultationBoard
+                stage={entry.consultationStage ?? "SUBMITTED"}
+                assignedClinician={entry.assignedClinician}
+                lastUpdatedBy={entry.lastUpdatedBy}
+                lastUpdatedAt={entry.updatedAt ?? entry.encounterAt}
+                formatDateTime={formatDateTime}
+              />
+            ) : null}
+            {!isPatient && entry.highlights.length > 0 ? (
+              <ul className="chip-row" aria-label={t("timeline.highlights")}>
+                {entry.highlights.map((highlight) => (
+                  <li key={highlight.id} className="chip">
+                    {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {!isPatient && entry.comments.length > 0 ? (
+              <ul className="comment-list" aria-label={t("timeline.comments")}>
+                {entry.comments.map((comment) => (
+                  <li key={comment.id}>
+                    <strong>{comment.authorRole}:</strong> {comment.body}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {role === "CLINICIAN" && entry.revisions && entry.revisions.length > 0 ? (
+              <ul className="comment-list" aria-label={t("version.history")}>
+                {entry.revisions.map((revision) => (
+                  <li key={`${entry.id}-rev-${revision.version}`}>
+                    {t("timeline.version", { n: revision.version })}
+                    {revision.summary ? ` · ${revision.summary}` : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 

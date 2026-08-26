@@ -1,4 +1,4 @@
-import type { CareEntry } from "@prisma/client";
+import type { CareEntry, Prisma } from "@prisma/client";
 import { prisma } from "../db";
 
 const PHI_METADATA_KEYS = new Set(["userId", "entryId", "newVersion", "targetVersion"]);
@@ -24,6 +24,18 @@ function auditMetadata(userId: string, entryId: string, newVersion: number, targ
   return metadata;
 }
 
+/** Next unused EntryRevision.version for this note (avoids @@unique([careEntryId, version])). */
+export async function nextRevisionVersion(
+  tx: Prisma.TransactionClient,
+  careEntryId: string,
+): Promise<number> {
+  const latestRevision = await tx.entryRevision.findFirst({
+    where: { careEntryId },
+    orderBy: { version: "desc" },
+  });
+  return (latestRevision?.version ?? 0) + 1;
+}
+
 export async function updateCareEntry(
   entryId: string,
   newContent: string,
@@ -31,17 +43,18 @@ export async function updateCareEntry(
 ): Promise<CareEntry> {
   return prisma.$transaction(async (tx) => {
     const entry = await tx.careEntry.findUniqueOrThrow({ where: { id: entryId } });
+    const snapshotVersion = await nextRevisionVersion(tx, entry.id);
 
     await tx.entryRevision.create({
       data: {
         careEntryId: entry.id,
         editorId: userId,
-        version: entry.version,
+        version: snapshotVersion,
         body: entry.body,
       },
     });
 
-    const newVersion = entry.version + 1;
+    const newVersion = Math.max(entry.version + 1, snapshotVersion);
     const updated = await tx.careEntry.update({
       where: { id: entryId },
       data: {
@@ -80,17 +93,18 @@ export async function revertCareEntry(
       },
     });
 
+    const snapshotVersion = await nextRevisionVersion(tx, entry.id);
     await tx.entryRevision.create({
       data: {
         careEntryId: entry.id,
         editorId: userId,
-        version: entry.version,
+        version: snapshotVersion,
         body: entry.body,
         summary: `snapshot-before-revert-to-v${targetVersion}`,
       },
     });
 
-    const newVersion = entry.version + 1;
+    const newVersion = Math.max(entry.version + 1, snapshotVersion);
     const updated = await tx.careEntry.update({
       where: { id: entryId },
       data: {

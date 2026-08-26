@@ -6,7 +6,9 @@ import { GlanceView } from "../../src/components/care/GlanceView";
 export default function GlanceRoute() {
   return (
     <CarePage titleKey="pages.glance">
-      {({ patientId, userId }) => <GlanceView patientId={patientId} userId={userId} />}
+      {({ patientId, userId, role }) => (
+        <GlanceView patientId={patientId} userId={userId} role={role} />
+      )}
     </CarePage>
   );
 }

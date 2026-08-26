@@ -9,6 +9,7 @@ import {
   assertCanReadSection,
   assertCanWriteNote,
   assertClinicScope,
+  assertPatientIsolation,
   canReadSection,
   type Actor,
 } from "../src/lib/auth/rbac";
@@ -68,6 +69,12 @@ describe("clinic-level boundary", () => {
     expect(() => assertClinicScope(clinician, CLINIC_A)).not.toThrow();
     expect(() => assertClinicScope(patient, CLINIC_A)).not.toThrow();
   });
+
+  it("blocks a patient from another patient's record id", () => {
+    expect(() => assertPatientIsolation(patient, patient.id)).not.toThrow();
+    expect(() => assertPatientIsolation(patient, "other-patient")).toThrow(ForbiddenError);
+    expect(() => assertPatientIsolation(staff, "any-patient")).not.toThrow();
+  });
 });
 
 describe("staff and clinician write/edit isolation", () => {
@@ -98,6 +105,9 @@ describe("staff and clinician write/edit isolation", () => {
   it("allows same-role writes and clinician edit of staff notes only with a version snapshot", () => {
     expect(() => assertCanWriteNote(staff, "STAFF", CLINIC_A)).not.toThrow();
     expect(() => assertCanWriteNote(clinician, "CLINICIAN", CLINIC_A)).not.toThrow();
+    expect(() =>
+      assertCanEditNote(staff, { authorRole: "STAFF", clinicId: CLINIC_A }),
+    ).not.toThrow();
     expect(() =>
       assertCanEditNote(
         clinician,
@@ -139,5 +149,11 @@ describe("patient cannot read internal or raw AI notes", () => {
       assertCanReadAiScribedNote(clinician, NoteSection.AI_DOCTOR_CONSULT_SUMMARY, CLINIC_A),
     ).not.toThrow();
     expect(() => assertCanReadInternalComments(clinician, CLINIC_A)).not.toThrow();
+    expect(canReadSection(staff, NoteSection.AI_DOCTOR_CONSULT_SUMMARY)).toBe(false);
+    expect(canReadSection(staff, NoteSection.AI_NURSE_CONSULT_SUMMARY)).toBe(true);
+    expect(canReadSection(staff, NoteSection.INTERNAL_COMMENT)).toBe(true);
+    expect(() =>
+      assertCanReadAiScribedNote(staff, NoteSection.AI_DOCTOR_CONSULT_SUMMARY, CLINIC_A),
+    ).toThrow(ForbiddenError);
   });
 });

@@ -1,24 +1,51 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { useI18n } from "../../lib/i18n/I18nContext";
-import { loadTimeline, type TimelineEntry } from "./TimelineView";
+import { apiFetch } from "../../lib/api/client";
 
-export function SearchView({ patientId, userId }: { patientId: string; userId: string }) {
+type SearchHit = {
+  id: string;
+  title: string;
+  encounterAt: string;
+  patientFacingSummary: string;
+  body?: string;
+  authorRole?: string;
+};
+
+export function SearchView({
+  patientId,
+  userId,
+  role,
+}: {
+  patientId: string;
+  userId: string;
+  role?: string;
+}) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const [entries, setEntries] = useState<TimelineEntry[]>([]);
+  const [results, setResults] = useState<SearchHit[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const isPatient = role === "PATIENT";
 
   const refresh = useCallback(async () => {
     try {
       setError(null);
-      setEntries(await loadTimeline(patientId, userId));
+      const params = new URLSearchParams();
+      if (query.trim()) {
+        params.set("q", query.trim());
+      }
+      const qs = params.toString();
+      const data = await apiFetch<{ results: SearchHit[] }>(
+        `/api/patients/${patientId}/search${qs ? `?${qs}` : ""}`,
+        { userId },
+      );
+      setResults(data.results);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("search.error"));
     }
-  }, [patientId, userId, t]);
+  }, [patientId, userId, query, t]);
 
   useEffect(() => {
     void refresh();
@@ -26,19 +53,6 @@ export function SearchView({ patientId, userId }: { patientId: string; userId: s
       void refresh();
     });
   }, [patientId, refresh]);
-
-  const results = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return entries;
-    }
-    return entries.filter((entry) => {
-      const haystack = [entry.title, entry.body ?? "", entry.patientFacingSummary]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(needle);
-    });
-  }, [entries, query]);
 
   return (
     <section className="search-panel">
@@ -61,7 +75,7 @@ export function SearchView({ patientId, userId }: { patientId: string; userId: s
         {results.map((entry) => (
           <li key={entry.id}>
             <h2>{entry.title}</h2>
-            <p>{entry.body ?? entry.patientFacingSummary}</p>
+            <p>{isPatient ? entry.patientFacingSummary : (entry.body ?? entry.patientFacingSummary)}</p>
           </li>
         ))}
       </ul>

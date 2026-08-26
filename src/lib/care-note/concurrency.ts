@@ -1,7 +1,7 @@
-import type { Actor } from "../auth/rbac";
-import { ForbiddenError, assertClinicScope } from "../auth/rbac";
+import type { Actor, NoteAuthorRole } from "../auth/rbac";
+import { ForbiddenError, assertCanEditNote, assertClinicScope } from "../auth/rbac";
 import { prisma } from "../db";
-import { updateCareEntry } from "./revision";
+import { updateCareEntry, nextRevisionVersion } from "./revision";
 
 export type ConcurrentEditResult = {
   entry: {
@@ -87,6 +87,11 @@ export async function applyOptimisticEdit(input: {
 
   assertClinicScope(actor, entry.clinicId);
   assertCanConcurrentEdit(actor);
+  const authorRole: NoteAuthorRole =
+    entry.author.role === "STAFF" || entry.author.role === "CLINICIAN"
+      ? entry.author.role
+      : "CLINICIAN";
+  assertCanEditNote(actor, { authorRole, clinicId: entry.clinicId }, { hasVersionSnapshot: true });
 
   if (input.baseVersion === entry.version) {
     const updated = await updateCareEntry(input.entryId, input.newContent, input.userId);
@@ -132,18 +137,19 @@ export async function applyOptimisticEdit(input: {
       throw new Error(`Missing revision snapshot for version ${input.baseVersion}`);
     }
 
+    const snapshotVersion = await nextRevisionVersion(tx, latest.id);
     await tx.entryRevision.create({
       data: {
         careEntryId: latest.id,
         editorId: input.userId,
-        version: latest.version,
+        version: snapshotVersion,
         body: latest.body,
         summary: "pre-conflict-snapshot",
       },
     });
 
     const mergedBody = mergeBodies(baseBody, latest.body, input.newContent, actor.role);
-    const newVersion = latest.version + 1;
+    const newVersion = Math.max(latest.version + 1, snapshotVersion);
     const updated = await tx.careEntry.update({
       where: { id: latest.id },
       data: {

@@ -8,9 +8,19 @@ import {
   type GlanceHighlight,
   type GlanceTopCard,
 } from "../cache/glanceCache";
-import { ForbiddenError, type Actor, assertClinicScope } from "../auth/rbac";
+import {
+  ForbiddenError,
+  type Actor,
+  assertClinicScope,
+  assertPatientIsolation,
+  canReadAiDoctorContent,
+  canReadInternalComments,
+  isAiDoctorHighlight,
+  isUnreleasedClinicianDraft,
+} from "../auth/rbac";
 import { createProvenancePointer } from "./provenance-utils";
 import { scoreKeywords } from "../learning/importance";
+import { resolveAssignedClinician } from "./transparency";
 
 const RISK_LABELS = new Set(["risk", "red-flag", "red_flag", "critical", "urgent", "high"]);
 
@@ -45,11 +55,12 @@ export async function invalidateGlanceForCareEntry(careEntryId: string): Promise
   }
 }
 
-export async function computeGlanceCard(patientId: string): Promise<GlanceTopCard> {
+export async function computeGlanceCard(patientId: string, actor: Actor): Promise<GlanceTopCard> {
   const entries = await prisma.careEntry.findMany({
     where: { patientId },
     include: {
-      highlights: true,
+      author: { select: { role: true, name: true } },
+      highlights: { include: { createdBy: { select: { role: true } } } },
       comments: true,
     },
     orderBy: { encounterAt: "desc" },
@@ -57,61 +68,97 @@ export async function computeGlanceCard(patientId: string): Promise<GlanceTopCar
 
   const weightRows = await prisma.featureWeight.findMany();
   const weights = new Map(weightRows.map((row) => [row.featureKey, row.weight]));
+  const includeComments = canReadInternalComments(actor.role);
+  const includeAiDoctor = canReadAiDoctorContent(actor.role);
+  const patientView = actor.role === "PATIENT";
 
-  const highlights: GlanceHighlight[] = entries
-    .flatMap((entry) =>
-      entry.highlights.map((highlight) => ({
-        ...highlight,
-        careEntryId: entry.id,
-        importanceScore: scoreKeywords(highlight.excerpt, weights),
-      })),
-    )
-    .filter((highlight) => isRiskHighlight(highlight.label, highlight.confidence))
-    .sort(
-      (left, right) =>
-        right.importanceScore - left.importanceScore ||
-        (right.confidence ?? 0) - (left.confidence ?? 0),
-    )
-    .slice(0, 5)
-    .map((highlight) => ({
-      id: highlight.id,
-      careEntryId: highlight.careEntryId,
-      excerpt: redactPhi(highlight.excerpt),
-      label: highlight.label,
-      confidence: highlight.confidence,
-      startOffset: highlight.startOffset,
-      endOffset: highlight.endOffset,
-      provenancePointer:
-        highlight.provenancePointer ??
-        createProvenancePointer(highlight.careEntryId, highlight.startOffset, highlight.endOffset),
-      importanceScore: highlight.importanceScore,
-    }));
+  const highlights: GlanceHighlight[] = patientView
+    ? []
+    : entries
+        .flatMap((entry) =>
+          entry.highlights
+            .filter((highlight) => {
+              if (
+                !includeAiDoctor &&
+                isAiDoctorHighlight(highlight.source, highlight.createdBy.role)
+              ) {
+                return false;
+              }
+              if (
+                actor.role === "STAFF" &&
+                isUnreleasedClinicianDraft(entry.author.role, entry.status)
+              ) {
+                return false;
+              }
+              return isRiskHighlight(highlight.label, highlight.confidence);
+            })
+            .map((highlight) => ({
+              ...highlight,
+              careEntryId: entry.id,
+              importanceScore: scoreKeywords(highlight.excerpt, weights),
+            })),
+        )
+        .sort(
+          (left, right) =>
+            right.importanceScore - left.importanceScore ||
+            (right.confidence ?? 0) - (left.confidence ?? 0),
+        )
+        .slice(0, 5)
+        .map((highlight) => ({
+          id: highlight.id,
+          careEntryId: highlight.careEntryId,
+          excerpt: redactPhi(highlight.excerpt),
+          label: highlight.label,
+          confidence: highlight.confidence,
+          startOffset: highlight.startOffset,
+          endOffset: highlight.endOffset,
+          provenancePointer:
+            highlight.provenancePointer ??
+            createProvenancePointer(highlight.careEntryId, highlight.startOffset, highlight.endOffset),
+          importanceScore: highlight.importanceScore,
+        }));
 
   const unresolvedActions: GlanceAction[] = [];
   for (const entry of entries) {
-    for (const comment of entry.comments) {
-      if (isUnresolvedAction(comment.body, null)) {
-        unresolvedActions.push({
-          id: comment.id,
-          kind: "comment",
-          text: redactPhi(comment.body),
-          careEntryId: entry.id,
-        });
+    const hideClinicianDraft =
+      actor.role === "STAFF" && isUnreleasedClinicianDraft(entry.author.role, entry.status);
+
+    if (includeComments && !patientView) {
+      for (const comment of entry.comments) {
+        if (isUnresolvedAction(comment.body, null)) {
+          unresolvedActions.push({
+            id: comment.id,
+            kind: "comment",
+            text: redactPhi(comment.body),
+            careEntryId: entry.id,
+          });
+        }
       }
     }
-    for (const highlight of entry.highlights) {
-      if (isUnresolvedAction(highlight.excerpt, highlight.label)) {
-        unresolvedActions.push({
-          id: highlight.id,
-          kind: "highlight",
-          text: redactPhi(highlight.excerpt),
-          careEntryId: entry.id,
-          startOffset: highlight.startOffset,
-          endOffset: highlight.endOffset,
-        });
+
+    if (!patientView && !hideClinicianDraft) {
+      for (const highlight of entry.highlights) {
+        if (
+          !includeAiDoctor &&
+          isAiDoctorHighlight(highlight.source, highlight.createdBy.role)
+        ) {
+          continue;
+        }
+        if (isUnresolvedAction(highlight.excerpt, highlight.label)) {
+          unresolvedActions.push({
+            id: highlight.id,
+            kind: "highlight",
+            text: redactPhi(highlight.excerpt),
+            careEntryId: entry.id,
+            startOffset: highlight.startOffset,
+            endOffset: highlight.endOffset,
+          });
+        }
       }
     }
-    for (const line of entry.body.split("\n")) {
+
+    const planSource = hideClinicianDraft || patientView ? entry.body.split(/\n+/)[0] ?? "" : entry.body;
+    for (const line of planSource.split("\n")) {
       if (/^\s*plan:/i.test(line) || /^\s*todo:/i.test(line)) {
         unresolvedActions.push({
           id: `${entry.id}:plan`,
@@ -123,14 +170,26 @@ export async function computeGlanceCard(patientId: string): Promise<GlanceTopCar
     }
   }
 
-  const latest = entries[0]?.encounterAt ?? null;
+  const latestEntry = entries[0] ?? null;
+  const patientRow = await prisma.user.findUniqueOrThrow({ where: { id: patientId } });
+  const assignedClinician = patientRow.clinicId
+    ? await resolveAssignedClinician(patientRow.clinicId)
+    : { name: "Attending clinician", title: "Attending Physician", department: "Internal Medicine" };
 
   return {
     patientId,
     highestRiskHighlights: highlights,
     unresolvedActions: unresolvedActions.slice(0, 8),
-    recencyScore: recencyScore(latest),
+    recencyScore: recencyScore(latestEntry?.encounterAt ?? null),
     generatedAt: new Date().toISOString(),
+    transparency: latestEntry
+      ? {
+          consultationStage: latestEntry.consultationStage,
+          assignedClinician,
+          lastUpdatedBy: { name: latestEntry.author.name, role: latestEntry.author.role },
+          lastUpdatedAt: latestEntry.updatedAt.toISOString(),
+        }
+      : undefined,
   };
 }
 
@@ -143,15 +202,16 @@ export async function getGlanceCard(
     throw new ForbiddenError("Patient is missing clinic scope");
   }
   assertClinicScope(actor, patient.clinicId);
+  assertPatientIsolation(actor, patientId);
   if (actor.role === "PATIENT" && actor.id !== patientId) {
     throw new ForbiddenError("Patients can only view their own glance card");
   }
 
-  const cached = readGlanceCache(patientId);
+  const cached = readGlanceCache(patientId, actor.role);
   if (cached) {
     return { card: cached, cacheHit: true };
   }
 
-  const card = writeGlanceCache(patientId, await computeGlanceCard(patientId));
+  const card = writeGlanceCache(patientId, await computeGlanceCard(patientId, actor), actor.role);
   return { card, cacheHit: false };
 }

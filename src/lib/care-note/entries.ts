@@ -3,9 +3,9 @@ import {
   type Actor,
   type NoteAuthorRole,
   ForbiddenError,
-  assertCanEditNote,
   assertCanWriteNote,
   assertClinicScope,
+  assertPatientIsolation,
 } from "../auth/rbac";
 import { prisma } from "../db";
 import { redactPhi } from "../security/redact";
@@ -36,6 +36,7 @@ export async function createCareEntry(
     throw new ForbiddenError("Patient is missing clinic scope");
   }
   assertClinicScope(actor, patient.clinicId);
+  assertPatientIsolation(actor, patient.id);
   assertCanWriteNote(actor, writeRole(actor), patient.clinicId);
 
   return prisma.careEntry.create({

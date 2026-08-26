@@ -33,9 +33,24 @@ function Workspace() {
   }, []);
   return createElement("div", null, [
     createElement("p", { key: "tick", "data-testid": "refresh-tick" }, String(tick)),
-    createElement(GlanceView, { key: "glance", patientId: "patient-1", userId: "clinician-1" }),
-    createElement(TimelineView, { key: "timeline", patientId: "patient-1", userId: "clinician-1" }),
-    createElement(NoteEditor, { key: "editor", patientId: "patient-1", userId: "clinician-1" }),
+    createElement(GlanceView, {
+      key: "glance",
+      patientId: "patient-1",
+      userId: "clinician-1",
+      role: "CLINICIAN",
+    }),
+    createElement(TimelineView, {
+      key: "timeline",
+      patientId: "patient-1",
+      userId: "clinician-1",
+      role: "CLINICIAN",
+    }),
+    createElement(NoteEditor, {
+      key: "editor",
+      patientId: "patient-1",
+      userId: "clinician-1",
+      role: "CLINICIAN",
+    }),
   ]);
 }
 

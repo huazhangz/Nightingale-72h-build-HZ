@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api/client";
 import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cache/glanceCache";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { ConsultationBoard } from "./ConsultationBoard";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
 
@@ -31,11 +32,20 @@ function timelineHref(item: {
   return `/timeline?${params.toString()}`;
 }
 
-export function GlanceView({ patientId, userId }: { patientId: string; userId: string }) {
+export function GlanceView({
+  patientId,
+  userId,
+  role,
+}: {
+  patientId: string;
+  userId: string;
+  role?: string;
+}) {
   const { t, formatDateTime } = useI18n();
   const [card, setCard] = useState<GlanceTopCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const isPatient = role === "PATIENT";
 
   const refresh = useCallback(async () => {
     try {
@@ -65,6 +75,11 @@ export function GlanceView({ patientId, userId }: { patientId: string; userId: s
     return <p className="status">{t("glance.empty")}</p>;
   }
 
+  const actions = isPatient
+    ? card.unresolvedActions.filter((action) => action.kind === "plan")
+    : card.unresolvedActions;
+  const risks = isPatient ? [] : card.highestRiskHighlights;
+
   return (
     <section className="glance-card" aria-label={t("glance.aria")}>
       <div className="glance-score">
@@ -76,33 +91,46 @@ export function GlanceView({ patientId, userId }: { patientId: string; userId: s
           {formatDateTime(card.generatedAt)}
         </p>
       </div>
-      <div>
-        <h2>{t("glance.riskTitle")}</h2>
-        {card.highestRiskHighlights.length === 0 ? (
-          <p className="muted">{t("glance.noRisk")}</p>
-        ) : (
-          <ul className="jump-list">
-            {card.highestRiskHighlights.map((highlight: GlanceHighlight) => (
-              <li key={highlight.id}>
-                <Link className="jump-link" href={timelineHref(highlight)}>
-                  <span className="badge">{t(riskLabelKey(highlight.label))}</span>
-                  {highlight.excerpt}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {isPatient && card.transparency ? (
+        <ConsultationBoard
+          stage={card.transparency.consultationStage}
+          assignedClinician={card.transparency.assignedClinician}
+          lastUpdatedBy={card.transparency.lastUpdatedBy}
+          lastUpdatedAt={card.transparency.lastUpdatedAt}
+          formatDateTime={formatDateTime}
+        />
+      ) : null}
+      {!isPatient ? (
+        <div>
+          <h2>{t("glance.riskTitle")}</h2>
+          {risks.length === 0 ? (
+            <p className="muted">{t("glance.noRisk")}</p>
+          ) : (
+            <ul className="jump-list">
+              {risks.map((highlight: GlanceHighlight) => (
+                <li key={highlight.id}>
+                  <Link className="jump-link" href={timelineHref(highlight)}>
+                    <span className="badge">{t(riskLabelKey(highlight.label))}</span>
+                    {highlight.excerpt}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
       <div>
         <h2>{t("glance.actionsTitle")}</h2>
-        {card.unresolvedActions.length === 0 ? (
+        {actions.length === 0 ? (
           <p className="muted">{t("glance.noActions")}</p>
         ) : (
           <ul className="jump-list">
-            {card.unresolvedActions.map((action: GlanceAction) => (
+            {actions.map((action: GlanceAction) => (
               <li key={action.id}>
                 <Link className="jump-link" href={timelineHref(action)}>
-                  <span className="badge">{t(`action.${action.kind}` as MessageKey)}</span>
+                  {!isPatient ? (
+                    <span className="badge">{t(`action.${action.kind}` as MessageKey)}</span>
+                  ) : null}
                   {action.text}
                 </Link>
               </li>

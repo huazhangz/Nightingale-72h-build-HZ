@@ -38,7 +38,15 @@ export type NoteAuthorRole = Extract<Role, "STAFF" | "CLINICIAN">;
 
 const PATIENT_READABLE_SECTIONS = new Set<NoteSection>([NoteSection.PATIENT_FACING_SUMMARY]);
 
-const CLINICAL_SECTIONS = new Set<NoteSection>([
+const STAFF_READABLE_SECTIONS = new Set<NoteSection>([
+  NoteSection.AI_NURSE_CONSULT_SUMMARY,
+  NoteSection.RAW_NOTE,
+  NoteSection.INTERNAL_COMMENT,
+  NoteSection.PATIENT_FACING_SUMMARY,
+  NoteSection.STAFF_NOTE,
+]);
+
+const CLINICIAN_READABLE_SECTIONS = new Set<NoteSection>([
   NoteSection.AI_DOCTOR_CONSULT_SUMMARY,
   NoteSection.AI_NURSE_CONSULT_SUMMARY,
   NoteSection.RAW_NOTE,
@@ -57,14 +65,48 @@ export function assertClinicScope(actor: Actor, resourceClinicId: string): void 
   }
 }
 
+/** Patients may only address their own User id as patientId. */
+export function assertPatientIsolation(actor: Actor, requestedPatientId: string): void {
+  if (actor.role === "PATIENT" && actor.id !== requestedPatientId) {
+    throw new ForbiddenError("Patients can only access their own record");
+  }
+}
+
 export function canReadSection(actor: Actor, section: NoteSection): boolean {
   if (actor.role === "PATIENT") {
     return PATIENT_READABLE_SECTIONS.has(section);
   }
-  if (actor.role === "STAFF" || actor.role === "CLINICIAN" || actor.role === "ADMIN") {
-    return CLINICAL_SECTIONS.has(section);
+  if (actor.role === "STAFF") {
+    return STAFF_READABLE_SECTIONS.has(section);
+  }
+  if (actor.role === "CLINICIAN" || actor.role === "ADMIN") {
+    return CLINICIAN_READABLE_SECTIONS.has(section);
   }
   return false;
+}
+
+export function isUnreleasedClinicianDraft(authorRole: string, status: string): boolean {
+  return authorRole === "CLINICIAN" && status === "DRAFT";
+}
+
+export function canReadInternalComments(role: Actor["role"]): boolean {
+  return role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
+}
+
+export function canReadAiDoctorContent(role: Actor["role"]): boolean {
+  return role === "CLINICIAN" || role === "ADMIN";
+}
+
+export function canReadRevisionLog(role: Actor["role"]): boolean {
+  return role === "CLINICIAN" || role === "ADMIN";
+}
+
+export function canWriteClinicalNotes(role: Actor["role"]): boolean {
+  return role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
+}
+
+export function isAiDoctorHighlight(source: string, createdByRole: string): boolean {
+  return source === "MODEL" && createdByRole === "CLINICIAN";
 }
 
 export function assertCanReadSection(

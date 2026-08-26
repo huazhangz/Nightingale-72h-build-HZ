@@ -41,6 +41,31 @@ describe("revision history", () => {
     expect(snapshot.body).toBe(fixture.entry.body);
   });
 
+  it("does not collide when a revision already exists at the current care-entry version", async () => {
+    await prisma.entryRevision.create({
+      data: {
+        careEntryId: fixture.entry.id,
+        editorId: fixture.clinician.id,
+        version: 1,
+        body: fixture.entry.body,
+        summary: "Initial encounter note",
+      },
+    });
+
+    const updated = await updateCareEntry(
+      fixture.entry.id,
+      "Observed cough and fever. Plan rest.",
+      fixture.clinician.id,
+    );
+
+    expect(updated.version).toBeGreaterThanOrEqual(2);
+    const versions = await prisma.entryRevision.findMany({
+      where: { careEntryId: fixture.entry.id },
+      select: { version: true },
+    });
+    expect(versions.map((row) => row.version).sort((a, b) => a - b)).toEqual([1, 2]);
+  });
+
   it("reverts content to a prior historical state", async () => {
     const original = fixture.entry.body;
     await updateCareEntry(fixture.entry.id, "Revised plan: antibiotics.", fixture.clinician.id);

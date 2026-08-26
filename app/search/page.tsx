@@ -6,7 +6,9 @@ import { SearchView } from "../../src/components/care/SearchView";
 export default function SearchRoute() {
   return (
     <CarePage titleKey="pages.search">
-      {({ patientId, userId }) => <SearchView patientId={patientId} userId={userId} />}
+      {({ patientId, userId, role }) => (
+        <SearchView patientId={patientId} userId={userId} role={role} />
+      )}
     </CarePage>
   );
 }
