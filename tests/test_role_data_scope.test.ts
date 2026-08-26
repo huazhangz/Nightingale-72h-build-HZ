@@ -73,12 +73,17 @@ describe("role-scoped timeline and glance payloads", () => {
   it("strips raw body, AI highlights, and comments for patients", async () => {
     const [entry] = await getPatientTimeline(fixture.patient.id, patientActor);
     expect(entry.body).toBeUndefined();
-    expect(entry.comments).toEqual([]);
-    expect(entry.highlights).toEqual([]);
+    expect(entry.comments).toBeUndefined();
+    expect(entry.highlights).toBeUndefined();
     expect(entry.revisions).toBeUndefined();
+    expect(entry.version).toBeUndefined();
+    expect(entry.status).toBeUndefined();
+    expect(entry.authorRole).toBeUndefined();
     expect(entry.patientFacingSummary).toContain("Observed cough");
     expect(JSON.stringify(entry)).not.toMatch(/Internal staff comment/);
     expect(JSON.stringify(entry)).not.toMatch(/follow-up CRP/);
+    expect(JSON.stringify(entry)).not.toMatch(/recencyScore/);
+    expect(JSON.stringify(entry)).not.toMatch(/importanceScore/);
   });
 
   it("gives staff comments and nurse-visible fields but not unreleased clinician drafts or AI doctor highlights", async () => {
@@ -94,19 +99,24 @@ describe("role-scoped timeline and glance payloads", () => {
     const [entry] = await getPatientTimeline(fixture.patient.id, clinicianActor);
     expect(entry.body).toContain("Observed cough");
     expect(entry.comments).toHaveLength(1);
-    expect(entry.highlights.length).toBeGreaterThan(0);
+    expect(entry.highlights?.length).toBeGreaterThan(0);
     expect(entry.revisions).toEqual([]);
   });
 
-  it("scopes glance so patients do not receive medical risk flags or internal comment actions", async () => {
+  it("scopes glance so patients do not receive recency scores, feature weights, risk flags, or internal actions", async () => {
     const patientCard = await getGlanceCard(fixture.patient.id, patientActor);
     expect(patientCard.card.highestRiskHighlights).toEqual([]);
-    expect(patientCard.card.unresolvedActions.every((action) => action.kind !== "comment")).toBe(
-      true,
-    );
+    expect(patientCard.card.unresolvedActions).toEqual([]);
+    expect(patientCard.card.recencyScore).toBeUndefined();
+    expect(JSON.stringify(patientCard.card)).not.toMatch(/recencyScore/);
+    expect(JSON.stringify(patientCard.card)).not.toMatch(/importanceScore/);
+    expect(JSON.stringify(patientCard.card)).not.toMatch(/Internal staff comment/);
+    expect(JSON.stringify(patientCard.card)).not.toMatch(/follow-up CRP/);
+    expect(patientCard.card.transparency).toBeDefined();
 
     const clinicianCard = await getGlanceCard(fixture.patient.id, clinicianActor);
     expect(clinicianCard.card.highestRiskHighlights.length).toBeGreaterThan(0);
+    expect(clinicianCard.card.recencyScore).toEqual(expect.any(Number));
     expect(clinicianCard.card.unresolvedActions.some((action) => action.kind === "comment")).toBe(
       true,
     );

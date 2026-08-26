@@ -22,6 +22,7 @@ vi.mock("next/link", () => ({
 import { NoteEditor } from "../src/components/care/NoteEditor";
 import { GlanceView } from "../src/components/care/GlanceView";
 import { TimelineView } from "../src/components/care/TimelineView";
+import { SearchView } from "../src/components/care/SearchView";
 import { I18nProvider } from "../src/lib/i18n/I18nContext";
 import { careEvents, createEventBus } from "../src/lib/events/bus";
 import { notifyEntryChanged, subscribePatientRefresh } from "../src/lib/events/patientRefresh";
@@ -156,5 +157,49 @@ describe("UI refresh after note save", () => {
     expect(ignored).not.toHaveBeenCalled();
     stopMatch();
     stopIgnore();
+  });
+});
+
+describe("search result navigation", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("makes each result card a link to the timeline entry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: "entry-42",
+                title: "Chest pain review",
+                encounterAt: new Date().toISOString(),
+                patientFacingSummary: "Symptoms reviewed",
+                body: "chest pain",
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    render(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(SearchView, {
+          patientId: "patient-1",
+          userId: "clinician-1",
+          role: "CLINICIAN",
+        }),
+      ),
+    );
+
+    const link = await screen.findByRole("link", { name: /Chest pain review/i });
+    expect(link.getAttribute("href")).toBe("/timeline?entryId=entry-42");
   });
 });

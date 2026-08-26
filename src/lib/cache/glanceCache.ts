@@ -30,7 +30,7 @@ export type GlanceTopCard = {
   patientId: string;
   highestRiskHighlights: GlanceHighlight[];
   unresolvedActions: GlanceAction[];
-  recencyScore: number;
+  recencyScore?: number;
   generatedAt: string;
   transparency?: GlanceTransparency;
 };

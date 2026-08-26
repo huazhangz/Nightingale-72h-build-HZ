@@ -66,11 +66,15 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
     orderBy: { encounterAt: "desc" },
   });
 
-  const weightRows = await prisma.featureWeight.findMany();
-  const weights = new Map(weightRows.map((row) => [row.featureKey, row.weight]));
   const includeComments = canReadInternalComments(actor.role);
   const includeAiDoctor = canReadAiDoctorContent(actor.role);
   const patientView = actor.role === "PATIENT";
+
+  const weights = patientView
+    ? new Map<string, number>()
+    : new Map(
+        (await prisma.featureWeight.findMany()).map((row) => [row.featureKey, row.weight]),
+      );
 
   const highlights: GlanceHighlight[] = patientView
     ? []
@@ -119,6 +123,7 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
         }));
 
   const unresolvedActions: GlanceAction[] = [];
+  if (!patientView) {
   for (const entry of entries) {
     const hideClinicianDraft =
       actor.role === "STAFF" && isUnreleasedClinicianDraft(entry.author.role, entry.status);
@@ -169,6 +174,7 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
       }
     }
   }
+  }
 
   const latestEntry = entries[0] ?? null;
   const patientRow = await prisma.user.findUniqueOrThrow({ where: { id: patientId } });
@@ -176,20 +182,32 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
     ? await resolveAssignedClinician(patientRow.clinicId)
     : { name: "Attending clinician", title: "Attending Physician", department: "Internal Medicine" };
 
+  const transparency = latestEntry
+    ? {
+        consultationStage: latestEntry.consultationStage,
+        assignedClinician,
+        lastUpdatedBy: { name: latestEntry.author.name, role: latestEntry.author.role },
+        lastUpdatedAt: latestEntry.updatedAt.toISOString(),
+      }
+    : undefined;
+
+  if (patientView) {
+    return {
+      patientId,
+      highestRiskHighlights: [],
+      unresolvedActions: [],
+      generatedAt: new Date().toISOString(),
+      transparency,
+    };
+  }
+
   return {
     patientId,
     highestRiskHighlights: highlights,
     unresolvedActions: unresolvedActions.slice(0, 8),
     recencyScore: recencyScore(latestEntry?.encounterAt ?? null),
     generatedAt: new Date().toISOString(),
-    transparency: latestEntry
-      ? {
-          consultationStage: latestEntry.consultationStage,
-          assignedClinician,
-          lastUpdatedBy: { name: latestEntry.author.name, role: latestEntry.author.role },
-          lastUpdatedAt: latestEntry.updatedAt.toISOString(),
-        }
-      : undefined,
+    transparency,
   };
 }
 

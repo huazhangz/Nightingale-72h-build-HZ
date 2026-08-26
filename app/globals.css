@@ -213,8 +213,32 @@ textarea:focus,
   gap: 1rem;
 }
 
+.search-results li {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.search-results .search-result-link {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 1rem;
+  border: none;
+  border-radius: 12px;
+  align-items: stretch;
+}
+
+.search-results .search-result-link h2 {
+  margin: 0 0 0.4rem;
+}
+
+.search-results .search-result-link p {
+  margin: 0;
+}
+
 .timeline-item,
-.search-results li,
 .glance-card {
   border: 1px solid var(--line);
   border-radius: 12px;

@@ -2,6 +2,7 @@ import type { Actor, NoteAuthorRole } from "../auth/rbac";
 import { ForbiddenError, assertCanEditNote, assertClinicScope } from "../auth/rbac";
 import { prisma } from "../db";
 import { updateCareEntry, nextRevisionVersion } from "./revision";
+import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
 
 export type ConcurrentEditResult = {
   entry: {
@@ -175,6 +176,8 @@ export async function applyOptimisticEdit(input: {
 
     return updated;
   });
+
+  await syncLocalRiskHighlights(merged.id, merged.body, input.userId);
 
   return {
     entry: merged,

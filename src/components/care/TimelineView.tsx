@@ -22,17 +22,17 @@ export type TimelineEntry = {
   title: string;
   encounterAt: string;
   updatedAt?: string;
-  version: number;
-  status: string;
+  version?: number;
+  status?: string;
   consultationStage?: string;
-  authorRole: string;
+  authorRole?: string;
   authorName?: string;
   assignedClinician?: { name: string; title: string; department: string };
   lastUpdatedBy?: { name: string; role: string };
   patientFacingSummary: string;
   body?: string;
-  comments: Array<{ id: string; authorRole: string; body: string; createdAt: string }>;
-  highlights: Array<{
+  comments?: Array<{ id: string; authorRole: string; body: string; createdAt: string }>;
+  highlights?: Array<{
     id: string;
     excerpt: string;
     label: string | null;
@@ -65,11 +65,11 @@ function markedText(text: string, start?: number, end?: number): ReactNode {
   );
 }
 
-function canShowStaffActions(role: string | undefined, authorRole: string): boolean {
+function canShowStaffActions(role: string | undefined, authorRole: string | undefined): boolean {
   return role === "STAFF" && authorRole === "STAFF";
 }
 
-function canShowClinicianActions(role: string | undefined, authorRole: string): boolean {
+function canShowClinicianActions(role: string | undefined, authorRole: string | undefined): boolean {
   return (role === "CLINICIAN" || role === "ADMIN") && authorRole === "CLINICIAN";
 }
 
@@ -166,7 +166,7 @@ export function TimelineView({
                     {" · "}
                     {entry.authorRole}
                     {" · "}
-                    {t("timeline.version", { n: entry.version })}
+                    {t("timeline.version", { n: entry.version ?? 1 })}
                   </>
                 )}
               </p>
@@ -186,18 +186,18 @@ export function TimelineView({
                 formatDateTime={formatDateTime}
               />
             ) : null}
-            {!isPatient && entry.highlights.length > 0 ? (
+            {!isPatient && (entry.highlights?.length ?? 0) > 0 ? (
               <ul className="chip-row" aria-label={t("timeline.highlights")}>
-                {entry.highlights.map((highlight) => (
+                {entry.highlights?.map((highlight) => (
                   <li key={highlight.id} className="chip">
                     {t(riskLabelKey(highlight.label))}: {highlight.excerpt}
                   </li>
                 ))}
               </ul>
             ) : null}
-            {!isPatient && entry.comments.length > 0 ? (
+            {!isPatient && (entry.comments?.length ?? 0) > 0 ? (
               <ul className="comment-list" aria-label={t("timeline.comments")}>
-                {entry.comments.map((comment) => (
+                {entry.comments?.map((comment) => (
                   <li key={comment.id}>
                     <strong>{comment.authorRole}:</strong> {comment.body}
                   </li>

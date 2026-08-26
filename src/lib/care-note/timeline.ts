@@ -76,6 +76,24 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
 
   return entries.map((entry) => {
     const authorRole = entry.author.role;
+    const latestRevision = Array.isArray(entry.revisions) ? entry.revisions.at(-1) : undefined;
+    const lastUpdatedBy = latestRevision
+      ? { name: latestRevision.editor.name, role: latestRevision.editor.role }
+      : { name: entry.author.name, role: entry.author.role };
+
+    if (actor.role === "PATIENT") {
+      return {
+        id: entry.id,
+        title: redactPhi(entry.title),
+        encounterAt: entry.encounterAt.toISOString(),
+        updatedAt: entry.updatedAt.toISOString(),
+        consultationStage: entry.consultationStage,
+        assignedClinician,
+        lastUpdatedBy,
+        patientFacingSummary: patientFacingSummary(entry.body),
+      };
+    }
+
     const showRaw = includeRawBody(actor, authorRole, entry.status);
     const redactedBody = redactPhi(entry.body);
     const comments = includeComments && Array.isArray(entry.comments)
@@ -87,32 +105,24 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         }))
       : [];
 
-    const highlights =
-      actor.role === "PATIENT"
-        ? []
-        : entry.highlights
-            .filter((highlight) => {
-              if (!includeAiDoctor && isAiDoctorHighlight(highlight.source, highlight.createdBy.role)) {
-                return false;
-              }
-              if (!showRaw && highlight.source === "MODEL") {
-                return false;
-              }
-              return true;
-            })
-            .map((highlight) => ({
-              id: highlight.id,
-              excerpt: redactPhi(highlight.excerpt),
-              label: highlight.label,
-              provenancePointer: highlight.provenancePointer,
-              startOffset: highlight.startOffset,
-              endOffset: highlight.endOffset,
-            }));
-
-    const latestRevision = Array.isArray(entry.revisions) ? entry.revisions.at(-1) : undefined;
-    const lastUpdatedBy = latestRevision
-      ? { name: latestRevision.editor.name, role: latestRevision.editor.role }
-      : { name: entry.author.name, role: entry.author.role };
+    const highlights = entry.highlights
+      .filter((highlight) => {
+        if (!includeAiDoctor && isAiDoctorHighlight(highlight.source, highlight.createdBy.role)) {
+          return false;
+        }
+        if (!showRaw && highlight.source === "MODEL") {
+          return false;
+        }
+        return true;
+      })
+      .map((highlight) => ({
+        id: highlight.id,
+        excerpt: redactPhi(highlight.excerpt),
+        label: highlight.label,
+        provenancePointer: highlight.provenancePointer,
+        startOffset: highlight.startOffset,
+        endOffset: highlight.endOffset,
+      }));
 
     const revisions =
       includeRevisions && Array.isArray(entry.revisions)

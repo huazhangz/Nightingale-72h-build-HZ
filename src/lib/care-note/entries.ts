@@ -3,6 +3,7 @@ import {
   type Actor,
   type NoteAuthorRole,
   ForbiddenError,
+  assertCanEditNote,
   assertCanWriteNote,
   assertClinicScope,
   assertPatientIsolation,
@@ -10,6 +11,7 @@ import {
 import { prisma } from "../db";
 import { redactPhi } from "../security/redact";
 import { applyOptimisticEdit } from "./concurrency";
+import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
 import { revertCareEntry } from "./revision";
 
 function writeRole(actor: Actor): NoteAuthorRole {
@@ -39,7 +41,7 @@ export async function createCareEntry(
   assertPatientIsolation(actor, patient.id);
   assertCanWriteNote(actor, writeRole(actor), patient.clinicId);
 
-  return prisma.careEntry.create({
+  const entry = await prisma.careEntry.create({
     data: {
       clinicId: patient.clinicId,
       patientId: patient.id,
@@ -50,6 +52,8 @@ export async function createCareEntry(
       encounterAt: input.encounterAt ? new Date(input.encounterAt) : new Date(),
     },
   });
+  await syncLocalRiskHighlights(entry.id, entry.body, actor.id);
+  return entry;
 }
 
 export async function patchCareEntry(

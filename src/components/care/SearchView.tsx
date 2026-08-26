@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { useI18n } from "../../lib/i18n/I18nContext";
@@ -74,8 +75,10 @@ export function SearchView({
       <ul className="search-results" aria-label={t("search.aria")}>
         {results.map((entry) => (
           <li key={entry.id}>
-            <h2>{entry.title}</h2>
-            <p>{isPatient ? entry.patientFacingSummary : (entry.body ?? entry.patientFacingSummary)}</p>
+            <Link className="jump-link search-result-link" href={`/timeline?entryId=${entry.id}`}>
+              <h2>{entry.title}</h2>
+              <p>{isPatient ? entry.patientFacingSummary : (entry.body ?? entry.patientFacingSummary)}</p>
+            </Link>
           </li>
         ))}
       </ul>

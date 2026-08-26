@@ -1,5 +1,6 @@
 import type { CareEntry, Prisma } from "@prisma/client";
 import { prisma } from "../db";
+import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
 
 const PHI_METADATA_KEYS = new Set(["userId", "entryId", "newVersion", "targetVersion"]);
 
@@ -41,7 +42,7 @@ export async function updateCareEntry(
   newContent: string,
   userId: string,
 ): Promise<CareEntry> {
-  return prisma.$transaction(async (tx) => {
+  const updated = await prisma.$transaction(async (tx) => {
     const entry = await tx.careEntry.findUniqueOrThrow({ where: { id: entryId } });
     const snapshotVersion = await nextRevisionVersion(tx, entry.id);
 
@@ -55,7 +56,7 @@ export async function updateCareEntry(
     });
 
     const newVersion = Math.max(entry.version + 1, snapshotVersion);
-    const updated = await tx.careEntry.update({
+    const next = await tx.careEntry.update({
       where: { id: entryId },
       data: {
         body: newContent,
@@ -73,8 +74,10 @@ export async function updateCareEntry(
       },
     });
 
-    return updated;
+    return next;
   });
+  await syncLocalRiskHighlights(updated.id, updated.body, userId);
+  return updated;
 }
 
 export async function revertCareEntry(

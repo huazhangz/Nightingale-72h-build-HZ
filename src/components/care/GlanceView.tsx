@@ -75,13 +75,12 @@ export function GlanceView({
     return <p className="status">{t("glance.empty")}</p>;
   }
 
-  const actions = isPatient
-    ? card.unresolvedActions.filter((action) => action.kind === "plan")
-    : card.unresolvedActions;
+  const actions = isPatient ? [] : card.unresolvedActions;
   const risks = isPatient ? [] : card.highestRiskHighlights;
 
   return (
     <section className="glance-card" aria-label={t("glance.aria")}>
+      {!isPatient ? (
       <div className="glance-score">
         <p className="label">{t("glance.recency")}</p>
         <p className="score" data-testid="recency-score">
@@ -91,6 +90,7 @@ export function GlanceView({
           {formatDateTime(card.generatedAt)}
         </p>
       </div>
+      ) : null}
       {isPatient && card.transparency ? (
         <ConsultationBoard
           stage={card.transparency.consultationStage}
@@ -119,6 +119,7 @@ export function GlanceView({
           )}
         </div>
       ) : null}
+      {!isPatient ? (
       <div>
         <h2>{t("glance.actionsTitle")}</h2>
         {actions.length === 0 ? (
@@ -138,6 +139,7 @@ export function GlanceView({
           </ul>
         )}
       </div>
+      ) : null}
     </section>
   );
 }
