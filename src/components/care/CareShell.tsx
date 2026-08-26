@@ -173,7 +173,10 @@ export function CareShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <nav className="nav" aria-label={t("nav.aria")}>
-          {NAV.map((item) => (
+          {NAV.filter(
+            (item) =>
+              item.href !== "/note-editor" || actor?.role === "STAFF" || actor?.role === "CLINICIAN",
+          ).map((item) => (
             <Link
               key={item.href}
               href={item.href}

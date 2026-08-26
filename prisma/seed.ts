@@ -1,5 +1,8 @@
 import path from "node:path";
 import { ConsultationStage, EntryStatus, PrismaClient, Role } from "@prisma/client";
+import { findLocalRiskPhrases } from "../src/lib/care-note/keyword-highlights";
+import { createProvenancePointer } from "../src/lib/care-note/provenance-utils";
+import { SEEDED_NOTES, wordCount } from "./clinical-notes";
 
 const dbPath = path.resolve(process.cwd(), "prisma", "dev.db");
 process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, "/")}`;
@@ -25,7 +28,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101001",
     dateOfBirth: "1984-03-12",
     title: "Blood pressure follow-up",
-    body: "Your blood pressure review is underway.\nClinician: systolic remains above target on current therapy.\nPlan: review home readings and adjust antihypertensives next visit.",
+    body: SEEDED_NOTES["elena.rossi@nightingale.test"]!,
     stage: ConsultationStage.MDT_CONSULTATION,
     status: EntryStatus.SUBMITTED,
   },
@@ -35,7 +38,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101002",
     dateOfBirth: "1976-11-04",
     title: "Diabetes checkup",
-    body: "Your diabetes visit summary is ready for you.\nClinician: HbA1c improved with diet changes.\nPlan: continue metformin and repeat labs in 12 weeks.",
+    body: SEEDED_NOTES["james.okonkwo@nightingale.test"]!,
     stage: ConsultationStage.CLINICIAN_REVIEWING,
     status: EntryStatus.SUBMITTED,
   },
@@ -45,7 +48,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101003",
     dateOfBirth: "1991-07-19",
     title: "Post-operative recovery",
-    body: "Your recovery plan after surgery is on track.\nClinician: wound healing well after laparoscopic cholecystectomy.\nPlan: remove dressing and encourage walking.",
+    body: SEEDED_NOTES["sofia.alvarez@nightingale.test"]!,
     stage: ConsultationStage.FINAL_SUMMARY,
     status: EntryStatus.LOCKED,
   },
@@ -55,7 +58,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101004",
     dateOfBirth: "1968-02-28",
     title: "Asthma review",
-    body: "Your breathing review is complete.\nClinician: night-time cough reduced on inhaled steroid.\nPlan: continue preventer and check inhaler technique.",
+    body: SEEDED_NOTES["lars.johansson@nightingale.test"]!,
     stage: ConsultationStage.SUBMITTED,
     status: EntryStatus.DRAFT,
   },
@@ -65,7 +68,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101005",
     dateOfBirth: "1989-09-08",
     title: "Antenatal checkup",
-    body: "Your pregnancy checkup is progressing well.\nClinician: no concerning symptoms reported.\nPlan: routine midwife follow-up and iron studies.",
+    body: SEEDED_NOTES["amara.diallo@nightingale.test"]!,
     stage: ConsultationStage.CLINICIAN_REVIEWING,
     status: EntryStatus.SUBMITTED,
   },
@@ -75,7 +78,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101006",
     dateOfBirth: "1959-05-21",
     title: "COPD maintenance",
-    body: "Your lung clinic visit has been recorded.\nClinician: exertional breathlessness is stable.\nPlan: pulmonary rehab referral and inhaler adherence check.",
+    body: SEEDED_NOTES["noah.williams@nightingale.test"]!,
     stage: ConsultationStage.MDT_CONSULTATION,
     status: EntryStatus.SUBMITTED,
   },
@@ -85,7 +88,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101007",
     dateOfBirth: "1973-12-15",
     title: "Mood follow-up",
-    body: "Your wellbeing follow-up is scheduled.\nClinician: sleep and appetite improving with counselling.\nPlan: continue weekly sessions and review in a month.",
+    body: SEEDED_NOTES["pierre.dubois@nightingale.test"]!,
     stage: ConsultationStage.CLINICIAN_REVIEWING,
     status: EntryStatus.SUBMITTED,
   },
@@ -95,7 +98,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101008",
     dateOfBirth: "1987-01-03",
     title: "Gout flare review",
-    body: "Your joint pain review is in progress.\nClinician: swelling settling on anti-inflammatory cover.\nPlan: start urate-lowering therapy after the flare.",
+    body: SEEDED_NOTES["aisha.mensah@nightingale.test"]!,
     stage: ConsultationStage.SUBMITTED,
     status: EntryStatus.DRAFT,
   },
@@ -105,7 +108,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101009",
     dateOfBirth: "1980-08-17",
     title: "Thyroid monitoring",
-    body: "Your thyroid results have been reviewed.\nClinician: TSH within range on current levothyroxine dose.\nPlan: repeat thyroid function in six months.",
+    body: SEEDED_NOTES["mateo.silva@nightingale.test"]!,
     stage: ConsultationStage.FINAL_SUMMARY,
     status: EntryStatus.LOCKED,
   },
@@ -115,7 +118,7 @@ const PATIENTS: PatientSeed[] = [
     phone: "5550101010",
     dateOfBirth: "1995-04-26",
     title: "Knee osteoarthritis",
-    body: "Your joint clinic visit is complete.\nClinician: pain limits stairs; no red-flag swelling.\nPlan: physiotherapy and topical anti-inflammatory gel.",
+    body: SEEDED_NOTES["hannah.berg@nightingale.test"]!,
     stage: ConsultationStage.CLINICIAN_REVIEWING,
     status: EntryStatus.SUBMITTED,
   },
@@ -140,7 +143,41 @@ async function deletePatientRecord(patientId: string): Promise<void> {
   await prisma.user.delete({ where: { id: patientId } });
 }
 
+async function writeKeywordHighlights(careEntryId: string, body: string, createdById: string): Promise<void> {
+  await prisma.highlight.deleteMany({
+    where: {
+      careEntryId,
+      source: "MODEL",
+      label: { in: ["HIGH", "CRITICAL", "MEDIUM", "LOW"] },
+    },
+  });
+  const hits = findLocalRiskPhrases(body);
+  if (hits.length === 0) {
+    return;
+  }
+  await prisma.highlight.createMany({
+    data: hits.map((hit) => ({
+      careEntryId,
+      createdById,
+      startOffset: hit.startOffset,
+      endOffset: hit.endOffset,
+      excerpt: hit.excerpt,
+      label: hit.label,
+      source: "MODEL" as const,
+      confidence: hit.label === "CRITICAL" ? 0.95 : hit.label === "HIGH" ? 0.85 : hit.label === "MEDIUM" ? 0.7 : 0.55,
+      provenancePointer: createProvenancePointer(careEntryId, hit.startOffset, hit.endOffset),
+    })),
+  });
+}
+
 async function main() {
+  for (const patient of PATIENTS) {
+    const words = wordCount(patient.body);
+    if (words < 200) {
+      throw new Error(`Seed note for ${patient.email} has only ${words} words`);
+    }
+  }
+
   const clinic = await prisma.clinic.upsert({
     where: { slug: "nightingale-demo" },
     update: { name: "Nightingale Demo Clinic" },
@@ -262,6 +299,7 @@ async function main() {
         where: { id: existing.id },
         data: { consultationStage: patient.stage, status: patient.status, body: patient.body },
       });
+      await writeKeywordHighlights(existing.id, patient.body, existing.authorId);
       continue;
     }
 
@@ -311,6 +349,8 @@ async function main() {
         },
       });
     }
+
+    await writeKeywordHighlights(entry.id, patient.body, authorId);
 
     await prisma.auditLog.create({
       data: {

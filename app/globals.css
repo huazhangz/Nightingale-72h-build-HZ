@@ -368,8 +368,14 @@ textarea:focus,
   border-color: var(--accent);
 }
 
-.timeline-item.focused {
+.timeline-item.focused,
+.timeline-item.action-focused {
   box-shadow: 0 0 0 3px var(--accent);
+}
+
+.action-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .timeline-item-staff {

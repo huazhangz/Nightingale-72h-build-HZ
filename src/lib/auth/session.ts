@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { ForbiddenError, type Actor } from "./rbac";
+import { ConflictError } from "./conflict";
 
 export class UnauthorizedError extends Error {
   readonly code = "UNAUTHORIZED" as const;
@@ -28,6 +29,18 @@ export function errorResponse(error: unknown): Response {
   }
   if (error instanceof ForbiddenError) {
     return Response.json({ error: error.message, code: error.code }, { status: 403 });
+  }
+  if (error instanceof ConflictError) {
+    return Response.json(
+      {
+        error: error.message,
+        code: error.code,
+        currentVersion: error.currentVersion,
+        currentBody: error.currentBody,
+        currentTitle: error.currentTitle,
+      },
+      { status: 409 },
+    );
   }
   if (error instanceof Error && /No .* found/.test(error.message)) {
     return Response.json({ error: error.message }, { status: 404 });

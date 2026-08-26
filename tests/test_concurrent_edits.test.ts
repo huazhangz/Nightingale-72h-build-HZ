@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ConflictError } from "../src/lib/auth/conflict";
 import { applyOptimisticEdit, mergeBodies } from "../src/lib/care-note/concurrency";
 import { prisma } from "../src/lib/db";
 import { createNoteFixture, deleteNoteFixture } from "./helpers/fixtures";
@@ -45,7 +46,7 @@ describe("concurrent edits", () => {
     );
   });
 
-  it("does not silently overwrite a concurrent staff edit without a revision snapshot", async () => {
+  it("rejects a stale patch with 409 conflict and leaves the latest body unchanged", async () => {
     const staffEdit = await applyOptimisticEdit({
       entryId: fixture.entry.id,
       userId: fixture.staff!.id,
@@ -55,59 +56,51 @@ describe("concurrent edits", () => {
     expect(staffEdit.conflict).toBe(false);
     expect(staffEdit.entry.version).toBe(2);
 
-    const clinicianEdit = await applyOptimisticEdit({
-      entryId: fixture.entry.id,
-      userId: fixture.clinician.id,
-      newContent: CLINICIAN_BODY,
-      baseVersion: 1,
-    });
+    await expect(
+      applyOptimisticEdit({
+        entryId: fixture.entry.id,
+        userId: fixture.clinician.id,
+        newContent: CLINICIAN_BODY,
+        baseVersion: 1,
+      }),
+    ).rejects.toBeInstanceOf(ConflictError);
 
-    expect(clinicianEdit.conflict).toBe(true);
-    expect(clinicianEdit.resolution).toBe("merged-clinician-precedence");
-    expect(clinicianEdit.entry.body).toContain("Assessment: clinician impression");
-    expect(clinicianEdit.entry.body).toContain("Staff task: bill");
-    expect(clinicianEdit.entry.body).not.toContain("Assessment: staff vitals logged");
+    try {
+      await applyOptimisticEdit({
+        entryId: fixture.entry.id,
+        userId: fixture.clinician.id,
+        newContent: CLINICIAN_BODY,
+        baseVersion: 1,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).code).toBe("CONFLICT");
+      expect((error as ConflictError).currentVersion).toBe(2);
+      expect((error as ConflictError).currentBody).toBe(STAFF_BODY);
+    }
 
-    const revisions = await prisma.entryRevision.findMany({
-      where: { careEntryId: fixture.entry.id },
-      orderBy: { version: "asc" },
-    });
-
-    expect(revisions.map((revision) => revision.body)).toContain(BASE_BODY);
-    expect(revisions.map((revision) => revision.body)).toContain(STAFF_BODY);
-    expect(revisions.some((revision) => revision.summary === "pre-conflict-snapshot")).toBe(true);
-
-    const audit = await prisma.auditLog.findMany({
-      where: { entityId: fixture.entry.id, action: "NOTE_EDIT" },
-    });
-    expect(audit.length).toBeGreaterThanOrEqual(2);
-    expect(audit.some((row) => row.actorId === fixture.clinician.id)).toBe(true);
-    expect(JSON.stringify(audit)).not.toContain("staff vitals");
+    const stored = await prisma.careEntry.findUniqueOrThrow({ where: { id: fixture.entry.id } });
+    expect(stored.body).toBe(STAFF_BODY);
+    expect(stored.version).toBe(2);
+    expect(ConflictError).toBeDefined();
   });
 
-  it("keeps clinician content when merging a stale clinician edit on a staff note", async () => {
+  it("applies when baseVersion matches the stored version", async () => {
     await applyOptimisticEdit({
-      entryId: fixture.entry.id,
-      userId: fixture.clinician.id,
-      newContent: CLINICIAN_BODY,
-      baseVersion: 1,
-    });
-
-    const staffLate = await applyOptimisticEdit({
       entryId: fixture.entry.id,
       userId: fixture.staff!.id,
       newContent: STAFF_BODY,
       baseVersion: 1,
     });
 
-    expect(staffLate.conflict).toBe(true);
-    expect(staffLate.entry.body).toContain("Assessment: clinician impression");
-    expect(staffLate.entry.body).toContain("Staff task: bill");
-
-    const lostClinician = await prisma.entryRevision.findFirst({
-      where: { careEntryId: fixture.entry.id, body: CLINICIAN_BODY },
+    const second = await applyOptimisticEdit({
+      entryId: fixture.entry.id,
+      userId: fixture.staff!.id,
+      newContent: `${STAFF_BODY}\nNote: reviewed.`,
+      baseVersion: 2,
     });
-    expect(lostClinician).not.toBeNull();
+    expect(second.conflict).toBe(false);
+    expect(second.entry.version).toBe(3);
   });
 
   it("blocks staff from patching a clinician-authored diagnosis", async () => {

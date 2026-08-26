@@ -77,5 +77,16 @@ describe("seeded virtual patients", () => {
     expect(patientEntry.patientFacingSummary).toBe("Your blood pressure review is underway.");
     expect(JSON.stringify(patientEntry)).not.toMatch(/Nursing staff/);
     expect(JSON.stringify(patientEntry)).not.toMatch(/systolic remains above target/);
+
+    for (const patient of patients) {
+      for (const entry of patient.patientEntries) {
+        expect(entry.body.trim().split(/\s+/).length).toBeGreaterThanOrEqual(200);
+      }
+    }
+    const keywords = ["chest pain", "shortness of breath", "fever", "nausea", "hyperpyrexia", "allergy"];
+    const corpus = patients.flatMap((patient) => patient.patientEntries.map((entry) => entry.body)).join("\n");
+    for (const keyword of keywords) {
+      expect(corpus.toLowerCase()).toContain(keyword);
+    }
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiFetch } from "../../lib/api/client";
+import { apiFetch, ApiError } from "../../lib/api/client";
 import { notifyEntryChanged } from "../../lib/events/patientRefresh";
 import { useI18n } from "../../lib/i18n/I18nContext";
 import { loadTimeline, type TimelineEntry } from "./TimelineView";
@@ -19,7 +19,7 @@ export function NoteEditor({
   const { t } = useI18n();
   const searchParams = useSearchParams();
   const requestedEntryId = searchParams?.get("entryId");
-  const canWrite = role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
+  const canWrite = role === "STAFF" || role === "CLINICIAN";
   const [title, setTitle] = useState("Follow-up visit");
   const [body, setBody] = useState("Plan: review symptoms and continue current care.");
   const [entryId, setEntryId] = useState<string | null>(null);
@@ -61,7 +61,7 @@ export function NoteEditor({
   }, [requestedEntryId, entries, role]);
 
   if (!canWrite) {
-    return null;
+    return <p className="status">{t("note.noAccess")}</p>;
   }
 
   async function saveNote() {
@@ -103,7 +103,19 @@ export function NoteEditor({
       }
       setEntries(await loadTimeline(patientId, userId));
     } catch (caught) {
-      setStatus(caught instanceof Error ? caught.message : t("note.saveError"));
+      if (caught instanceof ApiError && caught.status === 409) {
+        setStatus(t("note.conflict"));
+        const latest = await loadTimeline(patientId, userId);
+        setEntries(latest);
+        const match = latest.find((entry) => entry.id === entryId);
+        if (match) {
+          setTitle(match.title);
+          setBody(match.body ?? match.patientFacingSummary);
+          setVersion(match.version ?? 1);
+        }
+      } else {
+        setStatus(caught instanceof Error ? caught.message : t("note.saveError"));
+      }
     } finally {
       setSaving(false);
     }

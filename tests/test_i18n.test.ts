@@ -20,7 +20,8 @@ const SAMPLE_KEYS: MessageKey[] = [
   "version.history",
   "timeline.viewHistory",
   "timeline.viewDetail",
-  "version.revert",
+  "note.conflict",
+  "note.noAccess",
   "login.patientTitle",
   "progress.submitted",
 ];

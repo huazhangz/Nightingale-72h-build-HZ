@@ -60,7 +60,7 @@ function canShowStaffActions(role: string | undefined, authorRole: string | unde
 }
 
 function canShowClinicianActions(role: string | undefined, authorRole: string | undefined): boolean {
-  return (role === "CLINICIAN" || role === "ADMIN") && authorRole === "CLINICIAN";
+  return role === "CLINICIAN" && authorRole === "CLINICIAN";
 }
 
 function authorBadge(authorRole: string | undefined): { className: string; icon: string } {
@@ -89,6 +89,9 @@ export function TimelineView({
   const isPatient = role === "PATIENT";
 
   const targetEntryId = searchParams?.get("entryId") ?? null;
+  const highlightAction = searchParams?.get("highlightAction") === "true";
+  const actionId = searchParams?.get("actionId");
+  const actionKind = searchParams?.get("actionKind");
   let targetStart = searchParams?.get("offset") ?? null;
   let targetEnd = searchParams?.get("endOffset") ?? null;
   const pointer = searchParams?.get("pointer");
@@ -128,11 +131,18 @@ export function TimelineView({
     }
     const node = document.getElementById(`entry-${targetEntryId}`);
     node?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (highlightAction && actionId) {
+      const actionNode = document.querySelector(`[data-action-id="${CSS.escape(actionId)}"]`);
+      if (actionNode instanceof HTMLElement) {
+        actionNode.scrollIntoView({ behavior: "smooth", block: "center" });
+        actionNode.classList.add("action-focused");
+      }
+    }
     if (startOffset !== undefined && endOffset !== undefined) {
       const mark = document.getElementById(`hl-${targetEntryId}-${startOffset}-${endOffset}`);
       mark?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [targetEntryId, loading, entries, startOffset, endOffset]);
+  }, [targetEntryId, loading, entries, startOffset, endOffset, highlightAction, actionId]);
 
   if (loading) {
     return <p className="status">{t("timeline.loading")}</p>;
@@ -153,6 +163,16 @@ export function TimelineView({
     <ol className="timeline" aria-label={t("timeline.aria")}>
       {entries.map((entry) => {
         const focused = entry.id === targetEntryId;
+        const actionOnEntry =
+          highlightAction &&
+          (actionId === `${entry.id}:plan` ||
+            (actionKind === "comment" && entry.comments?.some((comment) => comment.id === actionId)) ||
+            (actionKind === "highlight" &&
+              entry.highlights?.some(
+                (highlight) =>
+                  highlight.id === actionId ||
+                  (highlight.startOffset === startOffset && highlight.endOffset === endOffset),
+              )));
         const display = isPatient
           ? entry.patientFacingSummary
           : (entry.body ?? entry.patientFacingSummary);
@@ -166,11 +186,19 @@ export function TimelineView({
             : entry.authorRole === "CLINICIAN"
               ? "timeline-item timeline-item-clinician"
               : "timeline-item";
+        const itemClass = [
+          itemRoleClass,
+          focused ? "focused" : "",
+          actionOnEntry ? "action-focused" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
         return (
           <li
             key={entry.id}
             id={`entry-${entry.id}`}
-            className={focused ? `${itemRoleClass} focused` : itemRoleClass}
+            className={itemClass}
+            data-action-id={actionId === `${entry.id}:plan` ? `${entry.id}:plan` : undefined}
           >
             <header className="timeline-item-head">
               <h2>
@@ -253,7 +281,10 @@ export function TimelineView({
                   <li key={highlight.id}>
                     <button
                       type="button"
-                      className={`chip ${riskBadgeClass(highlight.label)}`}
+                      data-action-id={highlight.id}
+                      className={`chip ${riskBadgeClass(highlight.label)}${
+                        highlightAction && actionId === highlight.id ? " action-focused" : ""
+                      }`}
                       onClick={() => {
                         const mark = document.getElementById(
                           `hl-${entry.id}-${highlight.startOffset}-${highlight.endOffset}`,
@@ -275,7 +306,11 @@ export function TimelineView({
             {!isPatient && (entry.comments?.length ?? 0) > 0 ? (
               <ul className="comment-list" aria-label={t("timeline.comments")}>
                 {entry.comments?.map((comment) => (
-                  <li key={comment.id}>
+                  <li
+                    key={comment.id}
+                    data-action-id={comment.id}
+                    className={highlightAction && actionId === comment.id ? "action-focused" : undefined}
+                  >
                     <strong>{comment.authorRole}:</strong> {comment.body}
                   </li>
                 ))}

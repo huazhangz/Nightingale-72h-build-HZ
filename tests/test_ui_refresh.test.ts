@@ -84,7 +84,7 @@ describe("UI refresh after note save", () => {
             JSON.stringify({
               patientId: "patient-1",
               highestRiskHighlights: [],
-              unresolvedActions: glanceLoads > 1 ? [{ id: "a1", kind: "plan", text: "Plan: follow up" }] : [],
+              unresolvedActions: glanceLoads > 1 ? [{ id: "e1:plan", kind: "plan", text: "Plan: follow up", careEntryId: "e1" }] : [],
               recencyScore: glanceLoads,
               generatedAt: new Date().toISOString(),
             }),
@@ -144,6 +144,9 @@ describe("UI refresh after note save", () => {
       expect(screen.getByText("Plan: follow up")).toBeTruthy();
     });
     expect(screen.getByText("Plan: follow up")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Plan: follow up/i }).getAttribute("href")).toContain(
+      "highlightAction=true",
+    );
     expect(otherPatient).not.toHaveBeenCalled();
     stop();
   });
@@ -376,5 +379,6 @@ describe("role-switch login gate", () => {
     expect(screen.getByLabelText("Employee code")).toBeTruthy();
     expect(screen.getByText("Preparing clinic session…")).toBeTruthy();
     expect(screen.queryByTestId("session-user")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Note editor" })).toBeNull();
   });
 });

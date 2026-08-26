@@ -14,6 +14,22 @@ export async function loadGlance(patientId: string, userId: string): Promise<Gla
   return apiFetch<GlanceTopCard>(`/api/patients/${patientId}/glance`, { userId });
 }
 
+function actionHref(action: GlanceAction): string {
+  const params = new URLSearchParams({
+    entryId: action.careEntryId,
+    highlightAction: "true",
+    actionId: action.id,
+    actionKind: action.kind,
+  });
+  if (action.startOffset !== undefined) {
+    params.set("offset", String(action.startOffset));
+  }
+  if (action.endOffset !== undefined) {
+    params.set("endOffset", String(action.endOffset));
+  }
+  return `/timeline?${params.toString()}`;
+}
+
 function timelineHref(item: {
   careEntryId: string;
   startOffset?: number;
@@ -131,7 +147,7 @@ export function GlanceView({
           <ul className="jump-list">
             {actions.map((action: GlanceAction) => (
               <li key={action.id}>
-                <Link className="jump-link" href={timelineHref(action)}>
+                <Link className="jump-link" href={actionHref(action)}>
                   {!isPatient ? (
                     <span className="badge">{t(`action.${action.kind}` as MessageKey)}</span>
                   ) : null}

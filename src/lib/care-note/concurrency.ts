@@ -1,8 +1,8 @@
 import type { Actor, NoteAuthorRole } from "../auth/rbac";
+import { ConflictError } from "../auth/conflict";
 import { ForbiddenError, assertCanEditNote, assertClinicScope } from "../auth/rbac";
 import { prisma } from "../db";
-import { updateCareEntry, nextRevisionVersion } from "./revision";
-import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
+import { updateCareEntry } from "./revision";
 
 export type ConcurrentEditResult = {
   entry: {
@@ -14,7 +14,7 @@ export type ConcurrentEditResult = {
     clinicId: string;
   };
   conflict: boolean;
-  resolution: "applied" | "merged-clinician-precedence";
+  resolution: "applied";
 };
 
 function splitLines(value: string): string[] {
@@ -94,94 +94,30 @@ export async function applyOptimisticEdit(input: {
       : "CLINICIAN";
   assertCanEditNote(actor, { authorRole, clinicId: entry.clinicId }, { hasVersionSnapshot: true });
 
-  if (input.baseVersion === entry.version) {
-    const updated = await updateCareEntry(input.entryId, input.newContent, input.userId);
-    if (input.title !== undefined && input.title !== updated.title) {
-      const titled = await prisma.careEntry.update({
-        where: { id: updated.id },
-        data: { title: input.title },
-      });
-      return {
-        entry: titled,
-        conflict: false,
-        resolution: "applied",
-      };
-    }
+  if (input.baseVersion !== entry.version) {
+    throw new ConflictError(
+      "This note was updated by someone else. Refresh and review the latest changes before saving.",
+      entry.version,
+      entry.body,
+      entry.title,
+    );
+  }
+
+  const updated = await updateCareEntry(input.entryId, input.newContent, input.userId);
+  if (input.title !== undefined && input.title !== updated.title) {
+    const titled = await prisma.careEntry.update({
+      where: { id: updated.id },
+      data: { title: input.title },
+    });
     return {
-      entry: updated,
+      entry: titled,
       conflict: false,
       resolution: "applied",
     };
   }
-
-  if (input.baseVersion > entry.version) {
-    throw new ForbiddenError("baseVersion is ahead of the stored entry");
-  }
-
-  const merged = await prisma.$transaction(async (tx) => {
-    const latest = await tx.careEntry.findUniqueOrThrow({
-      where: { id: input.entryId },
-      include: { author: true },
-    });
-
-    const baseRevision = await tx.entryRevision.findUnique({
-      where: {
-        careEntryId_version: {
-          careEntryId: input.entryId,
-          version: input.baseVersion,
-        },
-      },
-    });
-
-    const baseBody = baseRevision?.body;
-    if (baseBody === undefined) {
-      throw new Error(`Missing revision snapshot for version ${input.baseVersion}`);
-    }
-
-    const snapshotVersion = await nextRevisionVersion(tx, latest.id);
-    await tx.entryRevision.create({
-      data: {
-        careEntryId: latest.id,
-        editorId: input.userId,
-        version: snapshotVersion,
-        body: latest.body,
-        summary: "pre-conflict-snapshot",
-      },
-    });
-
-    const mergedBody = mergeBodies(baseBody, latest.body, input.newContent, actor.role);
-    const newVersion = Math.max(latest.version + 1, snapshotVersion);
-    const updated = await tx.careEntry.update({
-      where: { id: latest.id },
-      data: {
-        body: mergedBody,
-        version: newVersion,
-        ...(input.title !== undefined ? { title: input.title } : {}),
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        actorId: input.userId,
-        action: "NOTE_EDIT",
-        entityType: "CareEntry",
-        entityId: input.entryId,
-        metadata: {
-          userId: input.userId,
-          entryId: input.entryId,
-          newVersion,
-        },
-      },
-    });
-
-    return updated;
-  });
-
-  await syncLocalRiskHighlights(merged.id, merged.body, input.userId);
-
   return {
-    entry: merged,
-    conflict: true,
-    resolution: "merged-clinician-precedence",
+    entry: updated,
+    conflict: false,
+    resolution: "applied",
   };
 }
