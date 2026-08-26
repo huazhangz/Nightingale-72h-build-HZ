@@ -1,31 +1,173 @@
-Open-source attribution
-=======================
+===============================================================================
+NIGHTINGALE CARE NOTES — THIRD-PARTY ATTRIBUTION
+===============================================================================
 
-This repository uses the following open-source packages. License texts are
-available from the upstream projects and in node_modules/<package>/LICENSE
-where installed.
+This product incorporates open-source software. All third-party components
+listed below are used in accordance with their respective open-source
+licenses. Copyright remains with the original authors and contributors.
+License texts shipped with each package (typically LICENSE or license.md
+in node_modules/<package>) are the controlling documents.
 
-Runtime
--------
-- Next.js (next) — MIT License
-- React (react) — MIT License
-- React DOM (react-dom) — MIT License
-- Prisma Client (@prisma/client) — Apache License 2.0
+This file covers direct dependencies declared in package.json, plus fonts
+loaded via next/font/google. Transitive dependencies (npm packages pulled
+in by those listed here) remain under their own licenses as published on
+the npm registry.
 
-Development / data
-------------------
-- Prisma CLI (prisma) — Apache License 2.0
-- Vitest (vitest) — MIT License
-- TypeScript (typescript) — Apache License 2.0
-- tsx — MIT License
-- jsdom — MIT License
-- Testing Library React (@testing-library/react) — MIT License
-- Testing Library user-event (@testing-library/user-event) — MIT License
-- Node type definitions (@types/node) — MIT License
-- React type definitions (@types/react) — MIT License
+This repository does not depend on Tailwind CSS or Lucide React. Visual
+styling is custom CSS (app/globals.css); icons are inline SVG.
 
-Not used in this build
-----------------------
-- Tailwind CSS — MIT License (listed because it is a common Next.js stack
-  dependency; this UI uses custom CSS instead)
-- Lucide React — ISC License (listed for completeness; icons are not bundled)
+Versions below are the ranges in package.json, with installed versions
+noted where they differ.
+
+-------------------------------------------------------------------------------
+1. CORE FRAMEWORK & UI LIBRARIES
+-------------------------------------------------------------------------------
+
+Next.js
+  Package:     next ^15.5.2  (installed 15.x)
+  License:     MIT
+  Copyright:   Vercel, Inc.
+  Website:     https://nextjs.org/
+  Repository:  https://github.com/vercel/next.js
+
+React
+  Package:     react ^19.1.1
+  License:     MIT
+  Copyright:   Meta Platforms, Inc. and affiliates
+  Website:     https://react.dev/
+  Repository:  https://github.com/facebook/react
+
+React DOM
+  Package:     react-dom ^19.1.1
+  License:     MIT
+  Copyright:   Meta Platforms, Inc. and affiliates
+  Website:     https://react.dev/
+  Repository:  https://github.com/facebook/react
+
+server-only
+  Package:     server-only ^0.0.1
+  License:     MIT
+  Website:     https://reactjs.org/
+  Repository:  https://github.com/facebook/react
+  Notes:       Marker package so Prisma/db modules cannot be imported from
+               Client Components.
+
+TypeScript
+  Package:     typescript ^5.9.2  (devDependency; installed 5.9.x)
+  License:     Apache-2.0
+  Copyright:   Microsoft Corporation
+  Website:     https://www.typescriptlang.org/
+  Repository:  https://github.com/microsoft/TypeScript
+
+@types/node
+  Package:     @types/node ^24.3.0  (devDependency)
+  License:     MIT
+  Website:     https://github.com/DefinitelyTyped/DefinitelyTyped
+  Repository:  https://github.com/DefinitelyTyped/DefinitelyTyped
+
+@types/react
+  Package:     @types/react 19.2.18  (devDependency)
+  License:     MIT
+  Website:     https://github.com/DefinitelyTyped/DefinitelyTyped
+  Repository:  https://github.com/DefinitelyTyped/DefinitelyTyped
+
+-------------------------------------------------------------------------------
+2. ICONS & STYLING
+-------------------------------------------------------------------------------
+
+Custom application CSS
+  Path:        app/globals.css
+  License:     Project source (this repository)
+  Notes:       Layout, glance cards, risk pills, and pastel highlight
+               tokens are authored in-repo. No Tailwind CSS package is
+               installed.
+
+Inline SVG icons
+  Path:        src/components/care/*.tsx
+  License:     Project source (this repository)
+  Notes:       Glance/timeline icons are inline SVG, not Lucide React.
+
+IBM Plex Sans  (loaded via next/font/google)
+  License:     SIL Open Font License 1.1
+  Copyright:   IBM Corp.
+  Website:     https://github.com/IBM/plex
+  Google Fonts: https://fonts.google.com/specimen/IBM+Plex+Sans
+
+Source Serif 4  (loaded via next/font/google)
+  License:     SIL Open Font License 1.1
+  Copyright:   Adobe (Source Serif)
+  Website:     https://github.com/adobe-fonts/source-serif
+  Google Fonts: https://fonts.google.com/specimen/Source+Serif+4
+
+-------------------------------------------------------------------------------
+3. DATABASE, ORM & APIs
+-------------------------------------------------------------------------------
+
+Prisma CLI
+  Package:     prisma ^6.14.0  (devDependency; installed 6.19.x)
+  License:     Apache-2.0
+  Website:     https://www.prisma.io/
+  Repository:  https://github.com/prisma/prisma
+
+Prisma Client
+  Package:     @prisma/client ^6.14.0  (installed 6.19.x)
+  License:     Apache-2.0
+  Website:     https://www.prisma.io/docs/orm/prisma-client
+  Repository:  https://github.com/prisma/prisma
+
+SQLite
+  Engine:      SQLite (bundled via Prisma for this project)
+  License:     Public domain (SQLite blessing / equivalent)
+  Website:     https://www.sqlite.org/
+  Notes:       Local file prisma/dev.db. Not a direct npm dependency.
+
+tsx
+  Package:     tsx ^4.20.5  (devDependency; Prisma seed runner)
+  License:     MIT
+  Repository:  https://github.com/privatenumber/tsx
+  Website:     https://tsx.is/
+
+-------------------------------------------------------------------------------
+4. TESTING & DEVELOPMENT UTILITIES
+-------------------------------------------------------------------------------
+
+Vitest
+  Package:     vitest ^3.2.4  (devDependency; installed 3.2.x)
+  License:     MIT
+  Website:     https://vitest.dev/
+  Repository:  https://github.com/vitest-dev/vitest
+
+jsdom
+  Package:     jsdom ^26.1.0  (devDependency)
+  License:     MIT
+  Website:     https://github.com/jsdom/jsdom
+  Repository:  https://github.com/jsdom/jsdom
+
+@testing-library/react
+  Package:     @testing-library/react ^16.3.0  (devDependency)
+  License:     MIT
+  Website:     https://testing-library.com/docs/react-testing-library/intro
+  Repository:  https://github.com/testing-library/react-testing-library
+
+@testing-library/user-event
+  Package:     @testing-library/user-event ^14.6.1  (devDependency)
+  License:     MIT
+  Website:     https://testing-library.com/docs/user-event/intro
+  Repository:  https://github.com/testing-library/user-event
+
+Node.js
+  Runtime:     Node.js 18+ (host environment, not an npm dependency)
+  License:     MIT (Node.js project)
+  Website:     https://nodejs.org/
+
+===============================================================================
+NOTICE
+===============================================================================
+
+Inclusion of a library in this product does not imply endorsement by the
+copyright holders. No warranty is provided by the authors of those
+libraries. For complete terms, consult the license file shipped with each
+package.
+
+Last updated: 2026-08-27
+===============================================================================
