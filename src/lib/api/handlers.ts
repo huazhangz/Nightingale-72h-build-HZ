@@ -7,6 +7,7 @@ import { searchPatientEntries } from "../care-note/search";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
 import { createHumanHighlight } from "../care-note/highlights";
+import { createPatientAction, patchPatientAction } from "../care-note/actions";
 import { recordEntryViews, releaseFinalSummary } from "../care-note/progress-engine";
 import { prisma } from "../db";
 
@@ -252,6 +253,48 @@ export async function handleCreateHighlight(request: Request, entryId: string): 
       label: payload.label,
     });
     return Response.json({ highlight }, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleCreatePatientAction(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const payload = (await request.json()) as {
+      text?: string;
+      kind?: string;
+      careEntryId?: string;
+    };
+    if (!payload.text?.trim()) {
+      return Response.json({ error: "text is required" }, { status: 400 });
+    }
+    const action = await createPatientAction(actor, patientId, {
+      text: payload.text,
+      kind: payload.kind,
+      careEntryId: payload.careEntryId,
+    });
+    return Response.json({ action }, { status: 201 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handlePatchPatientAction(
+  request: Request,
+  patientId: string,
+  actionId: string,
+): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const payload = (await request.json()) as {
+      status?: "PENDING" | "RESOLVED";
+      kind?: string;
+      text?: string;
+      careEntryId?: string;
+    };
+    const action = await patchPatientAction(actor, patientId, actionId, payload);
+    return Response.json({ action });
   } catch (error) {
     return errorResponse(error);
   }

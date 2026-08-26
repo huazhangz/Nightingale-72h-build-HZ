@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { riskTone } from "../../lib/care-note/risk-tone";
+import { useI18n } from "../../lib/i18n/I18nContext";
 
 export type HighlightSpan = {
   id: string;
@@ -34,6 +35,7 @@ export function HighlightedNoteBody({
   focusStart?: number;
   focusEnd?: number;
 }): ReactNode {
+  const { t } = useI18n();
   const length = text.length;
   const ranges = highlights
     .map((highlight) => {
@@ -86,7 +88,12 @@ export function HighlightedNoteBody({
       parts.push(<span key={`${entryId}-plain-${start}`}>{slice}</span>);
       continue;
     }
-    const primary = covering.sort((left, right) => rank[right.tone] - rank[left.tone])[0];
+    const primary = covering.sort((left, right) => {
+      if ((left.source === "HUMAN") !== (right.source === "HUMAN")) {
+        return left.source === "HUMAN" ? -1 : 1;
+      }
+      return rank[right.tone] - rank[left.tone];
+    })[0];
     const tone = primary?.tone ?? "medium";
     const origin =
       primary?.source === "HUMAN"
@@ -95,10 +102,13 @@ export function HighlightedNoteBody({
           : "clinician"
         : "model";
     const markId = primary && start === primary.start ? `hl-${entryId}-${primary.start}-${primary.end}` : undefined;
+    const tooltip =
+      origin === "model" ? t("highlight.tooltipModel") : t("highlight.tooltipManual");
     parts.push(
       <mark
         key={`${entryId}-mark-${start}`}
         id={markId}
+        title={tooltip}
         data-testid={focused ? "provenance-mark" : undefined}
         className={`inline-risk inline-risk-${tone} inline-origin-${origin}${focused ? " provenance-mark" : ""}`}
       >

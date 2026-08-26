@@ -12,13 +12,20 @@ export type GlanceHighlight = {
   importanceScore: number;
 };
 
+export type GlanceActionKind = "comment" | "highlight" | "plan" | "lab_order" | "follow_up";
+
 export type GlanceAction = {
   id: string;
-  kind: "comment" | "highlight" | "plan";
+  kind: GlanceActionKind;
   text: string;
   careEntryId: string;
   startOffset?: number;
   endOffset?: number;
+  status?: "PENDING" | "RESOLVED";
+  sourceKey?: string;
+  resolvedAt?: string | null;
+  resolvedByRole?: string | null;
+  resolvedByName?: string | null;
 };
 
 export type GlanceTransparency = {
@@ -32,6 +39,7 @@ export type GlanceTopCard = {
   patientId: string;
   highestRiskHighlights: GlanceHighlight[];
   unresolvedActions: GlanceAction[];
+  resolvedActions?: GlanceAction[];
   recencyScore?: number;
   generatedAt: string;
   transparency?: GlanceTransparency;

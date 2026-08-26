@@ -12,7 +12,7 @@ export function RecencyExplainer({
 }) {
   const { t } = useI18n();
   return (
-    <span className="recency-with-help">
+    <div className="recency-with-help">
       <span className="score" data-testid={testId}>
         {score}
       </span>
@@ -25,6 +25,6 @@ export function RecencyExplainer({
           <p>{t("glance.recencyMeaning")}</p>
         </div>
       </details>
-    </span>
+    </div>
   );
 }

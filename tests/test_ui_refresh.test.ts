@@ -272,7 +272,9 @@ describe("timeline detail modal and inline risk highlighting", () => {
     expect(await screen.findByRole("dialog")).toBeTruthy();
     expect(screen.getByText("v1 body")).toBeTruthy();
     expect(screen.getByText("v2 body")).toBeTruthy();
-    expect(screen.getAllByText("Nurse handoff").length).toBeGreaterThan(1);
+    expect(screen.getByRole("columnheader", { name: "Timestamp" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Internal comments" })).toBeNull();
+    expect(screen.getAllByText("Nurse handoff")).toHaveLength(1);
   });
 
   it("distinguishes nursing notes from clinician notes", async () => {

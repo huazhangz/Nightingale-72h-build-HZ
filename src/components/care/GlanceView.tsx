@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api/client";
 import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cache/glanceCache";
-import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { notifyEntryChanged, subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
 import { RecencyExplainer } from "./RecencyExplainer";
-import { riskBadgeClass, riskTone } from "../../lib/care-note/risk-tone";
+import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
 
@@ -76,6 +76,12 @@ function noteRef(careEntryId: string): string {
   return careEntryId.slice(-6).toUpperCase();
 }
 
+const TAG_OPTIONS = ["plan", "comment", "lab_order", "follow_up"] as const;
+
+function actionKindKey(kind: string): MessageKey {
+  return `action.${kind}` as MessageKey;
+}
+
 export function GlanceView({
   patientId,
   userId,
@@ -89,7 +95,13 @@ export function GlanceView({
   const [card, setCard] = useState<GlanceTopCard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [draftKind, setDraftKind] = useState<(typeof TAG_OPTIONS)[number]>("follow_up");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
   const isPatient = role === "PATIENT";
+  const canManage = role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
 
   const refresh = useCallback(async () => {
     try {
@@ -121,6 +133,52 @@ export function GlanceView({
 
   const actions = isPatient ? [] : card.unresolvedActions;
   const risks = isPatient ? [] : card.highestRiskHighlights;
+  const resolved = isPatient ? [] : (card.resolvedActions ?? []);
+
+  async function patchAction(action: GlanceAction, patch: { status?: "RESOLVED"; kind?: string }) {
+    setBusyId(action.id);
+    try {
+      await apiFetch(`/api/patients/${patientId}/actions/${encodeURIComponent(action.id)}`, {
+        userId,
+        method: "PATCH",
+        body: {
+          ...patch,
+          text: action.text,
+          careEntryId: action.careEntryId,
+          kind: patch.kind ?? action.kind,
+        },
+      });
+      notifyEntryChanged({ patientId, entryId: action.careEntryId, reason: "updated" });
+      setCard(await loadGlance(patientId, userId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("glance.error"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function addAction() {
+    const text = draftText.trim();
+    if (!text) {
+      return;
+    }
+    setBusyId("create");
+    try {
+      await apiFetch(`/api/patients/${patientId}/actions`, {
+        userId,
+        method: "POST",
+        body: { text, kind: draftKind },
+      });
+      setDraftText("");
+      setAdding(false);
+      notifyEntryChanged({ patientId, entryId: "action", reason: "updated" });
+      setCard(await loadGlance(patientId, userId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("action.createError"));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <section className="glance-card glance-top" aria-label={t("glance.aria")}>
@@ -178,34 +236,142 @@ export function GlanceView({
         <header className="glance-block-head">
           <ListIcon />
           <h2>{t("glance.actionsTitle")}</h2>
+          {canManage ? (
+            <button
+              type="button"
+              className="btn action-add-btn"
+              onClick={() => setAdding((open) => !open)}
+            >
+              {t("action.add")}
+            </button>
+          ) : null}
         </header>
+        {adding && canManage ? (
+          <form
+            className="action-create"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void addAction();
+            }}
+          >
+            <label htmlFor="new-action-kind">{t("action.kind")}</label>
+            <select
+              id="new-action-kind"
+              value={draftKind}
+              onChange={(event) => setDraftKind(event.target.value as (typeof TAG_OPTIONS)[number])}
+            >
+              {TAG_OPTIONS.map((kind) => (
+                <option key={kind} value={kind}>
+                  {t(actionKindKey(kind))}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="new-action-text">{t("action.text")}</label>
+            <textarea
+              id="new-action-text"
+              value={draftText}
+              onChange={(event) => setDraftText(event.target.value)}
+              rows={3}
+              required
+            />
+            <button type="submit" className="btn" disabled={busyId === "create"}>
+              {t("action.save")}
+            </button>
+          </form>
+        ) : null}
         {actions.length === 0 ? (
           <p className="muted">{t("glance.noActions")}</p>
         ) : (
           <ul className="action-stack">
-            {actions.map((action: GlanceAction) => (
+            {actions.map((action: GlanceAction) => {
+              const tags = TAG_OPTIONS.includes(action.kind as (typeof TAG_OPTIONS)[number])
+                ? TAG_OPTIONS
+                : ([action.kind, ...TAG_OPTIONS] as const);
+              return (
               <li key={action.id}>
-                <Link className="action-card" href={actionHref(action)}>
+                <article className="action-card">
                   <div className="action-card-head">
                     <span className="action-pending">{t("action.pending")}</span>
                     <span className="action-card-title">
-                      {t(`action.${action.kind}` as MessageKey)}
+                      {t(actionKindKey(action.kind))}
                     </span>
-                    <span className={`status-pill ${riskBadgeClass("UNRESOLVED_ACTION")}`}>
-                      {t(`action.${action.kind}` as MessageKey)}
-                    </span>
+                    {canManage ? (
+                      <label className="action-tag-label">
+                        <span className="visually-hidden">{t("action.kind")}</span>
+                        <select
+                          className={`status-pill ${riskBadgeClass("UNRESOLVED_ACTION")}`}
+                          value={action.kind}
+                          disabled={busyId === action.id}
+                          onChange={(event) => {
+                            void patchAction(action, { kind: event.target.value });
+                          }}
+                        >
+                          {tags.map((kind) => (
+                            <option key={kind} value={kind}>
+                              {t(actionKindKey(kind))}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <span className={`status-pill ${riskBadgeClass("UNRESOLVED_ACTION")}`}>
+                        {t(actionKindKey(action.kind))}
+                      </span>
+                    )}
+                    {canManage ? (
+                      <button
+                        type="button"
+                        className="btn secondary action-resolve"
+                        disabled={busyId === action.id}
+                        onClick={() => void patchAction(action, { status: "RESOLVED" })}
+                      >
+                        {t("action.resolve")}
+                      </button>
+                    ) : null}
                   </div>
-                  <div className={`action-subblock tone-${riskTone("UNRESOLVED_ACTION")}`}>
+                  <Link className="action-subblock" href={actionHref(action)}>
                     <p className="action-sub-meta">
                       {t("glance.viewNote")} #{noteRef(action.careEntryId)}
                     </p>
                     <p className="action-sub-text">{action.text}</p>
-                  </div>
-                </Link>
+                  </Link>
+                </article>
               </li>
-            ))}
+            );
+            })}
           </ul>
         )}
+        {resolved.length > 0 ? (
+          <details
+            className="resolved-history"
+            open={showResolved}
+            onToggle={(event) => setShowResolved(event.currentTarget.open)}
+          >
+            <summary>{t("action.historyTitle")}</summary>
+            <ul className="action-stack resolved-stack">
+              {resolved.map((action) => (
+                <li key={action.id}>
+                  <article className="action-card action-card-resolved">
+                    <div className="action-card-head">
+                      <span className="action-pending">{t("action.resolved")}</span>
+                      <span className={`status-pill ${riskBadgeClass("UNRESOLVED_ACTION")}`}>
+                        {t(actionKindKey(action.kind))}
+                      </span>
+                    </div>
+                    <p className="action-sub-text">{action.text}</p>
+                    <p className="action-sub-meta">
+                      {t("action.resolvedBy", {
+                        role: action.resolvedByRole ?? "—",
+                        name: action.resolvedByName ?? "—",
+                        time: action.resolvedAt ? formatDateTime(action.resolvedAt) : "—",
+                      })}
+                    </p>
+                  </article>
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </section>
       ) : null}
     </section>

@@ -9,6 +9,7 @@ import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { notifyEntryChanged, subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
 import { HighlightedNoteBody } from "./HighlightedNoteBody";
+import { HighlightComposer, selectionOffsets } from "./HighlightComposer";
 import { NoteDetailModal } from "./NoteDetailModal";
 import { RecencyExplainer } from "./RecencyExplainer";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
@@ -77,27 +78,6 @@ function authorBadge(authorRole: string | undefined): { className: string; icon:
     return { className: "author-badge author-badge-staff", icon: "🩺" };
   }
   return { className: "author-badge author-badge-clinician", icon: "⚕️" };
-}
-
-function selectionOffsets(root: HTMLElement): { start: number; end: number; text: string } | null {
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-    return null;
-  }
-  const range = selection.getRangeAt(0);
-  if (!root.contains(range.commonAncestorContainer)) {
-    return null;
-  }
-  const prefix = document.createRange();
-  prefix.selectNodeContents(root);
-  prefix.setEnd(range.startContainer, range.startOffset);
-  const start = prefix.toString().length;
-  const end = start + range.toString().length;
-  const text = range.toString().trim();
-  if (!text || end - start < 2) {
-    return null;
-  }
-  return { start, end, text };
 }
 
 export function TimelineView({
@@ -324,7 +304,7 @@ export function TimelineView({
             ) : null}
             {entry.title}
           </h2>
-          <p className="meta">
+          <div className="meta">
             {formatDateTime(entry.encounterAt)}
             {isPatient ? null : (
               <>
@@ -341,7 +321,7 @@ export function TimelineView({
                 <RecencyExplainer score={entry.recencyScore} testId={`timeline-recency-${entry.id}`} />
               </>
             ) : null}
-          </p>
+          </div>
           <div className="timeline-actions">
             {!isPatient ? (
               <button
@@ -407,32 +387,17 @@ export function TimelineView({
           )}
         </div>
         {draft?.entryId === entry.id ? (
-          <form
-            className="highlight-draft"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveHighlight();
-            }}
-          >
-            <label htmlFor={`hl-label-${entry.id}`}>{t("highlight.label")}</label>
-            <select
-              id={`hl-label-${entry.id}`}
-              value={draft.label}
-              onChange={(event) => setDraft({ ...draft, label: event.target.value })}
-            >
-              <option value="PATIENT_INSIGHT">PATIENT_INSIGHT</option>
-              <option value="UNRESOLVED_ACTION">UNRESOLVED_ACTION</option>
-              <option value="CRITICAL">CRITICAL</option>
-              <option value="MEDIUM">MEDIUM</option>
-              <option value="LOW">LOW</option>
-            </select>
-            <button type="submit" className="btn" disabled={savingHighlight}>
-              {t("highlight.create")}
-            </button>
-            <button type="button" className="btn secondary" onClick={() => setDraft(null)}>
-              {t("highlight.cancel")}
-            </button>
-          </form>
+          <HighlightComposer
+            entryId={entry.id}
+            label={draft.label}
+            saving={savingHighlight}
+            onLabelChange={(label) => setDraft({ ...draft, label })}
+            onSave={() => void saveHighlight()}
+            onCancel={() => setDraft(null)}
+            labelCaption={t("highlight.label")}
+            saveCaption={t("highlight.create")}
+            cancelCaption={t("highlight.cancel")}
+          />
         ) : null}
         {entry.assignedClinician && entry.lastUpdatedBy ? (
           <ConsultationBoard
@@ -510,7 +475,6 @@ export function TimelineView({
 
   return (
     <>
-    <h2 className="timeline-heading">{t("timeline.longitudinal")}</h2>
     {canHighlight ? <p className="muted">{t("highlight.selectHint")}</p> : null}
     <ol className="timeline" aria-label={t("timeline.aria")}>
       {visible.filter((entry) => !entry.archived).map((entry) => renderEntry(entry, false))}
@@ -539,10 +503,16 @@ export function TimelineView({
       <NoteDetailModal
         entry={modalEntry}
         role={role}
+        userId={userId}
+        mode={historyId === modalEntry.id ? "history" : "detail"}
         showEdit={
           canShowStaffActions(role, modalEntry.authorRole) ||
           canShowClinicianActions(role, modalEntry.authorRole)
         }
+        onHighlightCreated={() => {
+          notifyEntryChanged({ patientId, entryId: modalEntry.id, reason: "updated" });
+          void refresh();
+        }}
         onClose={() => {
           setDetailId(null);
           setHistoryId(null);

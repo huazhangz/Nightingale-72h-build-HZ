@@ -74,6 +74,8 @@ model User {
   highlightFeedbacks HighlightFeedback[]
   auditLogs          AuditLog[]
   entryViews         CareEntryViewer[]
+  createdActions     CareAction[]        @relation("ActionCreator")
+  resolvedActions    CareAction[]        @relation("ActionResolver")
 
   @@index([clinicId, role])
   @@index([employeeCode])
@@ -100,6 +102,7 @@ model CareEntry {
   comments   Comment[]
   highlights Highlight[]
   viewers    CareEntryViewer[]
+  careActions CareAction[]
 
   @@index([clinicId, patientId])
   @@index([patientId, encounterAt])
@@ -119,6 +122,33 @@ model EntryRevision {
   highlights Highlight[]
 
   @@unique([careEntryId, version])
+  @@index([careEntryId])
+}
+
+enum CareActionStatus {
+  PENDING
+  RESOLVED
+}
+
+model CareAction {
+  id             String           @id @default(cuid())
+  patientId      String
+  careEntryId    String
+  careEntry      CareEntry        @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User             @relation("ActionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  resolvedById   String?
+  resolvedBy     User?            @relation("ActionResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  sourceKey      String           @unique
+  kind           String
+  text           String
+  status         CareActionStatus @default(PENDING)
+  resolvedAt     DateTime?
+  resolvedByRole String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([patientId, status])
   @@index([careEntryId])
 }
 
