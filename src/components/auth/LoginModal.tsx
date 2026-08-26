@@ -16,11 +16,11 @@ export function LoginModal({
   onVerified: (userId: string) => void;
 }) {
   const { t } = useI18n();
-  const [fullName, setFullName] = useState(role === "PATIENT" ? "Zhang Wei" : "");
-  const [phone, setPhone] = useState(role === "PATIENT" ? "13812345678" : "");
-  const [dateOfBirth, setDateOfBirth] = useState(role === "PATIENT" ? "1985-06-15" : "");
+  const [fullName, setFullName] = useState(role === "PATIENT" ? "Elena Rossi" : "");
+  const [phone, setPhone] = useState(role === "PATIENT" ? "5550101001" : "");
+  const [dateOfBirth, setDateOfBirth] = useState(role === "PATIENT" ? "1984-03-12" : "");
   const [employeeCode, setEmployeeCode] = useState(
-    role === "STAFF" ? "000001" : role === "CLINICIAN" ? "000002" : "",
+    role === "STAFF" ? "00001" : role === "CLINICIAN" ? "00002" : "",
   );
   const [verification, setVerification] = useState("");
   const [error, setError] = useState<string | null>(null);

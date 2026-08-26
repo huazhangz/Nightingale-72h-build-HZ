@@ -1,37 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/db";
 import { verifyPatientLogin, verifyStaffLogin } from "../src/lib/auth/login";
+import { getPatientTimeline } from "../src/lib/care-note/timeline";
 
 const FEATURED_EMAILS = [
-  "zhang.wei@nightingale.test",
-  "li.na@nightingale.test",
-  "wang.fang@nightingale.test",
-  "chen.hao@nightingale.test",
-  "liu.min@nightingale.test",
-  "zhao.lei@nightingale.test",
-  "sun.mei@nightingale.test",
-  "wu.jun@nightingale.test",
-  "zhou.yan@nightingale.test",
-  "huang.tao@nightingale.test",
-  "lin.xia@nightingale.test",
-  "gao.peng@nightingale.test",
-  "xu.ting@nightingale.test",
-  "ma.qiang@nightingale.test",
-  "he.jing@nightingale.test",
+  "elena.rossi@nightingale.test",
+  "james.okonkwo@nightingale.test",
+  "sofia.alvarez@nightingale.test",
+  "lars.johansson@nightingale.test",
+  "amara.diallo@nightingale.test",
+  "noah.williams@nightingale.test",
+  "pierre.dubois@nightingale.test",
+  "aisha.mensah@nightingale.test",
+  "mateo.silva@nightingale.test",
+  "hannah.berg@nightingale.test",
 ];
 
 describe("seeded virtual patients", () => {
-  it("includes 15 patients with notes and audit logs, featuring Zhang Wei", async () => {
+  it("includes 10 diverse patients plus Museil Kamil and Joe Zhou", async () => {
     const patients = await prisma.user.findMany({
       where: { email: { in: FEATURED_EMAILS } },
       include: { patientEntries: true },
     });
-    expect(patients).toHaveLength(15);
+    expect(patients).toHaveLength(10);
 
-    const featured = patients.find((user) => user.email === "zhang.wei@nightingale.test");
-    expect(featured?.name).toBe("张伟 (Zhang Wei)");
-    expect(featured?.phone).toBe("13812345678");
-    expect(featured?.dateOfBirth).toBe("1985-06-15");
+    const featured = patients.find((user) => user.email === "elena.rossi@nightingale.test");
+    expect(featured?.name).toBe("Elena Rossi");
+    expect(featured?.phone).toBe("5550101001");
+    expect(featured?.dateOfBirth).toBe("1984-03-12");
     expect(featured?.patientEntries.length).toBeGreaterThan(0);
 
     for (const patient of patients) {
@@ -43,23 +39,43 @@ describe("seeded virtual patients", () => {
     }
 
     const login = await verifyPatientLogin({
-      fullName: "Zhang Wei",
-      phone: "138-1234-5678",
-      dateOfBirth: "1985-06-15",
+      fullName: "Elena Rossi",
+      phone: "555-010-1001",
+      dateOfBirth: "1984-03-12",
     });
     expect(login?.id).toBe(featured?.id);
 
     const staff = await verifyStaffLogin({
       role: "STAFF",
-      employeeCode: "000001",
-      verification: "demo",
+      employeeCode: "00001",
+      verification: "00001",
     });
     const clinician = await verifyStaffLogin({
       role: "CLINICIAN",
-      employeeCode: "000002",
-      verification: "demo",
+      employeeCode: "00002",
+      verification: "00002",
     });
     expect(staff?.role).toBe("STAFF");
     expect(clinician?.role).toBe("CLINICIAN");
+
+    const staffUser = await prisma.user.findUniqueOrThrow({
+      where: { email: "staff@nightingale.test" },
+    });
+    const clinicianUser = await prisma.user.findUniqueOrThrow({
+      where: { email: "clinician@nightingale.test" },
+    });
+    expect(staffUser.name).toBe("Museil Kamil");
+    expect(clinicianUser.name).toBe("Joe Zhou");
+
+    const [patientEntry] = await getPatientTimeline(featured!.id, {
+      id: featured!.id,
+      role: "PATIENT",
+      clinicId: featured!.clinicId,
+    });
+    expect(patientEntry.body).toBeUndefined();
+    expect(patientEntry.comments).toBeUndefined();
+    expect(patientEntry.patientFacingSummary).toBe("Your blood pressure review is underway.");
+    expect(JSON.stringify(patientEntry)).not.toMatch(/Nursing staff/);
+    expect(JSON.stringify(patientEntry)).not.toMatch(/systolic remains above target/);
   });
 });

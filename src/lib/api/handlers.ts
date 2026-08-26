@@ -8,7 +8,7 @@ import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
 import { prisma } from "../db";
 
-const FEATURED_PATIENT_EMAIL = "zhang.wei@nightingale.test";
+const FEATURED_PATIENT_EMAIL = "elena.rossi@nightingale.test";
 
 const DEMO_STAFF: Array<{
   email: string;
@@ -20,17 +20,17 @@ const DEMO_STAFF: Array<{
 }> = [
   {
     email: "staff@nightingale.test",
-    name: "Sam Staff",
+    name: "Museil Kamil",
     role: "STAFF",
-    employeeCode: "000001",
+    employeeCode: "00001",
     title: "Registered Nurse",
     department: "Outpatient Nursing",
   },
   {
     email: "clinician@nightingale.test",
-    name: "Casey Clinician",
+    name: "Joe Zhou",
     role: "CLINICIAN",
-    employeeCode: "000002",
+    employeeCode: "00002",
     title: "Attending Physician",
     department: "Internal Medicine",
   },
@@ -38,7 +38,7 @@ const DEMO_STAFF: Array<{
     email: "admin@nightingale.test",
     name: "Avery Admin",
     role: "ADMIN",
-    employeeCode: "000003",
+    employeeCode: "00003",
     title: "Clinic Administrator",
     department: "Operations",
   },
@@ -79,29 +79,9 @@ export async function handleDemoBootstrap(): Promise<Response> {
       );
     }
 
-    const featured = await prisma.user.upsert({
-      where: { email: FEATURED_PATIENT_EMAIL },
-      update: {
-        name: "张伟 (Zhang Wei)",
-        role: "PATIENT",
-        clinic: { connect: { id: clinic.id } },
-        phone: "13812345678",
-        dateOfBirth: "1985-06-15",
-      },
-      create: {
-        email: FEATURED_PATIENT_EMAIL,
-        name: "张伟 (Zhang Wei)",
-        role: "PATIENT",
-        clinic: { connect: { id: clinic.id } },
-        phone: "13812345678",
-        dateOfBirth: "1985-06-15",
-        passwordHash: "dev-only-not-a-real-hash",
-      },
-    });
-
     const patients = await prisma.user.findMany({
       where: { clinicId: clinic.id, role: "PATIENT" },
-      select: { id: true, name: true, email: true, phone: true },
+      select: { id: true, name: true, email: true, phone: true, role: true },
       orderBy: { name: "asc" },
     });
     patients.sort((left, right) => {
@@ -114,19 +94,21 @@ export async function handleDemoBootstrap(): Promise<Response> {
       return left.name.localeCompare(right.name);
     });
 
-    const clinician = users.find((user) => user.role === "CLINICIAN");
+    const featured =
+      patients.find((user) => user.email === FEATURED_PATIENT_EMAIL) ?? patients[0] ?? null;
+
     return Response.json({
       clinic: { id: clinic.id, name: clinic.name },
-      users: [...users, featured].map((user) => ({
+      users: [...users, ...(featured ? [featured] : [])].map((user) => ({
         id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
       })),
       patients,
-      patientId: featured.id,
-      featuredPatientId: featured.id,
-      defaultUserId: clinician?.id ?? users[0]?.id ?? null,
+      patientId: featured?.id ?? null,
+      featuredPatientId: featured?.id ?? null,
+      defaultUserId: null,
     });
   } catch (error) {
     return errorResponse(error);

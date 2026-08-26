@@ -70,7 +70,7 @@ describe("role login verification", () => {
     const ok = await verifyStaffLogin({
       role: "STAFF",
       employeeCode: staff.employeeCode ?? "",
-      verification: "clinic-pin",
+      verification: staff.employeeCode ?? "",
     });
     expect(ok?.id).toBe(staff.id);
     expect(
@@ -82,9 +82,16 @@ describe("role login verification", () => {
     ).toBeNull();
     expect(
       await verifyStaffLogin({
+        role: "STAFF",
+        employeeCode: staff.employeeCode ?? "",
+        verification: "wrong-secret",
+      }),
+    ).toBeNull();
+    expect(
+      await verifyStaffLogin({
         role: "CLINICIAN",
         employeeCode: staff.employeeCode ?? "",
-        verification: "clinic-pin",
+        verification: staff.employeeCode ?? "",
       }),
     ).toBeNull();
   });

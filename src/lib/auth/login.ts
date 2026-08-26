@@ -49,8 +49,12 @@ export async function verifyStaffLogin(input: {
   employeeCode: string;
   verification: string;
 }): Promise<{ id: string; role: Role } | null> {
-  const code = input.employeeCode.trim();
-  if (!/^\d{6}$/.test(code) || !input.verification.trim()) {
+  const code = digitsOnly(input.employeeCode);
+  const secret = input.verification.trim();
+  if (!/^\d{5,6}$/.test(code) || !secret) {
+    return null;
+  }
+  if (secret !== code && digitsOnly(secret) !== code) {
     return null;
   }
   const user = await prisma.user.findFirst({

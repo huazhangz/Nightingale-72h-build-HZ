@@ -67,19 +67,21 @@ export async function invalidateGlanceForCareEntry(careEntryId: string): Promise
 }
 
 export async function computeGlanceCard(patientId: string, actor: Actor): Promise<GlanceTopCard> {
+  const patientView = actor.role === "PATIENT";
   const entries = await prisma.careEntry.findMany({
     where: { patientId },
     include: {
       author: { select: { role: true, name: true } },
-      highlights: { include: { createdBy: { select: { role: true } } } },
-      comments: true,
+      highlights: patientView
+        ? false
+        : { include: { createdBy: { select: { role: true } } } },
+      comments: patientView ? false : true,
     },
     orderBy: { encounterAt: "desc" },
   });
 
   const includeComments = canReadInternalComments(actor.role);
   const includeAiDoctor = canReadAiDoctorContent(actor.role);
-  const patientView = actor.role === "PATIENT";
 
   const weights = patientView
     ? new Map<string, number>()

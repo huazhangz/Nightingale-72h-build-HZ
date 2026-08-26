@@ -23,6 +23,7 @@ import { NoteEditor } from "../src/components/care/NoteEditor";
 import { GlanceView } from "../src/components/care/GlanceView";
 import { TimelineView } from "../src/components/care/TimelineView";
 import { SearchView } from "../src/components/care/SearchView";
+import { CarePage, CareShell } from "../src/components/care/CareShell";
 import { I18nProvider } from "../src/lib/i18n/I18nContext";
 import { careEvents, createEventBus } from "../src/lib/events/bus";
 import { notifyEntryChanged, subscribePatientRefresh } from "../src/lib/events/patientRefresh";
@@ -314,5 +315,66 @@ describe("timeline detail modal and inline risk highlighting", () => {
     expect(await screen.findByText("Nursing note")).toBeTruthy();
     expect(document.querySelector(".timeline-item-staff")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Edit existing note" })).toBeTruthy();
+  });
+});
+
+describe("role-switch login gate", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("clears the session and opens login instead of keeping the previous user", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/demo")) {
+          return new Response(
+            JSON.stringify({
+              clinic: { name: "Nightingale" },
+              users: [
+                { id: "staff-1", name: "Museil Kamil", email: "staff@nightingale.test", role: "STAFF" },
+                { id: "clin-1", name: "Joe Zhou", email: "clinician@nightingale.test", role: "CLINICIAN" },
+              ],
+              patients: [
+                { id: "p1", name: "Elena Rossi", email: "elena.rossi@nightingale.test", phone: "5550101001" },
+              ],
+              patientId: "p1",
+              featuredPatientId: "p1",
+              defaultUserId: null,
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ error: `unmocked ${url}` }), { status: 404 });
+      }),
+    );
+
+    render(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(
+          CareShell,
+          null,
+          createElement(CarePage, {
+            titleKey: "pages.timeline",
+            children: ({ userId }: { userId: string }) =>
+              createElement("p", { "data-testid": "session-user" }, userId),
+          }),
+        ),
+      ),
+    );
+
+    const staffRole = await screen.findByRole("radio", { name: "STAFF" });
+    expect(screen.getByText("Preparing clinic session…")).toBeTruthy();
+    expect(screen.queryByTestId("session-user")).toBeNull();
+
+    fireEvent.click(staffRole);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByLabelText("Employee code")).toBeTruthy();
+    expect(screen.getByText("Preparing clinic session…")).toBeTruthy();
+    expect(screen.queryByTestId("session-user")).toBeNull();
   });
 });

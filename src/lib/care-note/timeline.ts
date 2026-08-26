@@ -42,8 +42,8 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
     ? await resolveAssignedClinician(patient.clinicId)
     : { name: "Attending clinician", title: "Attending Physician", department: "Internal Medicine" };
 
-  const includeComments = canReadInternalComments(actor.role);
-  const includeRevisions = canReadRevisionLog(actor.role);
+  const includeComments = actor.role !== "PATIENT" && canReadInternalComments(actor.role);
+  const includeRevisions = actor.role !== "PATIENT" && canReadRevisionLog(actor.role);
   const includeAiDoctor = canReadAiDoctorContent(actor.role);
 
   const entries = await prisma.careEntry.findMany({
@@ -56,10 +56,13 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
             orderBy: { createdAt: "asc" as const },
           }
         : false,
-      highlights: {
-        include: { createdBy: { select: { role: true } } },
-        orderBy: { createdAt: "asc" },
-      },
+      highlights:
+        actor.role === "PATIENT"
+          ? false
+          : {
+              include: { createdBy: { select: { role: true } } },
+              orderBy: { createdAt: "asc" },
+            },
       revisions: includeRevisions
         ? {
             orderBy: { version: "asc" as const },
@@ -105,7 +108,8 @@ export async function getPatientTimeline(patientId: string, actor: Actor) {
         }))
       : [];
 
-    const highlights = entry.highlights
+    const highlightRows = Array.isArray(entry.highlights) ? entry.highlights : [];
+    const highlights = highlightRows
       .filter((highlight) => {
         if (!includeAiDoctor && isAiDoctorHighlight(highlight.source, highlight.createdBy.role)) {
           return false;

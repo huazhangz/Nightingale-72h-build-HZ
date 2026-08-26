@@ -71,9 +71,6 @@ export function CareShell({ children }: { children: ReactNode }) {
           setFeaturedPatientId(featured);
           setSelectedPatientId(featured);
         }
-        if (demo.defaultUserId) {
-          setUserId(demo.defaultUserId);
-        }
       })
       .catch((caught: unknown) => {
         setError(caught instanceof Error ? caught.message : t("session.loadError"));
@@ -147,7 +144,7 @@ export function CareShell({ children }: { children: ReactNode }) {
             <div className="role-selector-row" role="radiogroup" aria-label={t("role.aria")}>
               {ROLE_ORDER.map((role) => {
                 const match = users.find((user) => user.role === role);
-                const selected = match?.id === userId;
+                const selected = actor?.role === role;
                 return (
                   <button
                     key={role}
@@ -155,14 +152,15 @@ export function CareShell({ children }: { children: ReactNode }) {
                     role="radio"
                     aria-checked={selected}
                     className={selected ? "role-btn active" : "role-btn"}
-                    disabled={!match}
+                    disabled={role === "PATIENT" ? false : !match}
                     onClick={() => {
-                      if (!match) {
+                      if (role !== "PATIENT" && !match) {
                         return;
                       }
-                      if (match.id === userId) {
+                      if (selected && userId) {
                         return;
                       }
+                      setUserId("");
                       setPendingRole(role);
                     }}
                   >
@@ -196,7 +194,10 @@ export function CareShell({ children }: { children: ReactNode }) {
         {pendingRole ? (
           <LoginModal
             role={pendingRole}
-            onCancel={() => setPendingRole(null)}
+            onCancel={() => {
+              setUserId("");
+              setPendingRole(null);
+            }}
             onVerified={(id) => {
               setUserId(id);
               setPendingRole(null);
