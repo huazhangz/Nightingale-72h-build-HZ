@@ -16,7 +16,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // SQLite cannot safely share one file across parallel test files (Windows locks).
     fileParallelism: false,
+    maxWorkers: 1,
     environmentMatchGlobs: [["tests/test_ui_refresh.test.ts", "jsdom"]],
   },
 });

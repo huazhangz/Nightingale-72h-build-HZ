@@ -39,11 +39,17 @@ describe("concurrent edits", () => {
     });
   });
 
-  it("merges with clinician precedence on conflicting lines", () => {
+  it("merges overlapping line edits with clinician precedence instead of last-write-wins", () => {
     const merged = mergeBodies(BASE_BODY, STAFF_BODY, CLINICIAN_BODY, "CLINICIAN");
     expect(merged).toBe(
       ["Assessment: clinician impression", "Plan: rest", "Staff task: bill"].join("\n"),
     );
+
+    const staffIncoming = mergeBodies(BASE_BODY, CLINICIAN_BODY, STAFF_BODY, "STAFF");
+    expect(staffIncoming).toBe(
+      ["Assessment: clinician impression", "Plan: rest", "Staff task: bill"].join("\n"),
+    );
+    expect(staffIncoming).not.toBe(STAFF_BODY);
   });
 
   it("rejects a stale patch with 409 conflict and leaves the latest body unchanged", async () => {
@@ -83,6 +89,27 @@ describe("concurrent edits", () => {
     expect(stored.body).toBe(STAFF_BODY);
     expect(stored.version).toBe(2);
     expect(ConflictError).toBeDefined();
+  });
+
+  it("clinician overwrite of a staff note writes an EntryRevision snapshot of the prior body", async () => {
+    const prior = await prisma.careEntry.findUniqueOrThrow({ where: { id: fixture.entry.id } });
+    expect(prior.authorId).toBe(fixture.staff!.id);
+
+    const result = await applyOptimisticEdit({
+      entryId: fixture.entry.id,
+      userId: fixture.clinician.id,
+      newContent: CLINICIAN_BODY,
+      baseVersion: prior.version,
+    });
+    expect(result.entry.body).toBe(CLINICIAN_BODY);
+
+    const snapshots = await prisma.entryRevision.findMany({
+      where: { careEntryId: fixture.entry.id },
+    });
+    expect(snapshots.some((row) => row.body === prior.body)).toBe(true);
+    expect(snapshots.every((row) => row.editorId === fixture.clinician.id || row.body === prior.body)).toBe(
+      true,
+    );
   });
 
   it("applies when baseVersion matches the stored version", async () => {

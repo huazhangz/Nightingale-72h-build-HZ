@@ -2,7 +2,7 @@
 
 **EHR clinical intelligence** for acute handover: a Glance top card, a longitudinal Timeline, versioned care notes, deterministic risk highlighting, and an unresolved-action workflow — with clinic-scoped RBAC and PHI redaction on the server.
 
-This is a **judge-ready** application manual for the repository. Implementation detail beyond this page lives in [TECHNICAL_BRIEF.md](./TECHNICAL_BRIEF.md). Open-source licenses are listed in [ATTRIBUTION.txt](./ATTRIBUTION.txt).
+This is a **judge-ready** application manual for the repository. Implementation detail beyond this page lives in [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md). Open-source licenses are listed in [ATTRIBUTION.txt](./ATTRIBUTION.txt).
 
 ---
 
@@ -78,7 +78,7 @@ App Router  app/api/*  →  handlers.ts
    npx vitest run
    ```
 
-   **61 / 61** tests pass (RBAC, isolation, highlights, CareAction workflow, UI refresh, i18n, seed identities). Equivalent: `npm run test`.
+   **64 / 64** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 ### Environment
 
@@ -104,7 +104,63 @@ Secondary verification for staff/clinician is the same digit string as the emplo
 
 ---
 
-## Role-based access control (RBAC)
+## Test Suite & Compatibility Guide
+
+Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests in `tests/test_ui_refresh.test.ts` use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
+
+**Last verified:** 64 / 64 passing (`npx vitest run`).
+
+### Why tests are single-threaded
+
+SQLite grants a write lock per database file. Parallel Vitest workers on Windows (and often macOS/Linux CI) hit `SQLITE_BUSY` / `EPERM` rename of the query engine. The repo therefore sets:
+
+- `fileParallelism: false`
+- `maxWorkers: 1`
+
+in `vitest.config.ts`. Do **not** enable Vitest file parallelism against the shared demo DB.
+
+### npm scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run test` | One-shot `vitest run` (CI / judges) |
+| `npm run test:run` | Same as `npm run test` |
+| `npm run test:watch` | Watch mode (`vitest`) |
+| `npm run test:ui` | Only the jsdom UI contract file |
+| `npx vitest run tests/test_rbac_scope.test.ts` | Single file |
+
+Pass extra Vitest flags after `--`:
+
+```bash
+npm run test -- --reporter=verbose
+npm run test -- tests/test_revision_history.test.ts
+```
+
+### Python bridge (`test_runner.py`)
+
+For harnesses that shell out to Python rather than npm:
+
+```bash
+python test_runner.py
+python test_runner.py -- tests/test_concurrent_edits.test.ts
+python3 test_runner.py --reporter=verbose
+```
+
+Requires Node/npm on `PATH`. The script only forwards to `npm run test`; it does not duplicate assertions.
+
+### Environment notes
+
+| Platform | Notes |
+| --- | --- |
+| Windows | Use the same `file:C:/...` Prisma URL as the app. Close other processes holding `prisma/dev.db` (including a stuck `next dev`) if generate fails with `EPERM` on `query_engine-windows.dll.node`. |
+| macOS / Linux | Same Vitest config; still keep `maxWorkers: 1` when sharing one SQLite file. |
+| CI | `npm ci` → `npx prisma db push` → `npm run test` (or `python test_runner.py`). |
+
+SQLite journals (`*.db-journal`, `*.db-wal`, `*.db-shm`), `.vitest-cache`, and `node_modules` are gitignored. Integration tests create ephemeral clinic/user rows and delete them in `afterEach`; they share the configured SQLite file but must not run in parallel.
+
+Coverage map: RBAC (`test_rbac_scope`), role payloads, search isolation, keyword/manual highlights, provenance, CareAction, revisions, concurrency, progress engine, recency/decay, UI refresh, seed identities, i18n.
+
+---
 
 Prisma `Role` values are **`PATIENT`**, **`STAFF`**, **`CLINICIAN`**, and **`ADMIN`**. There is no `RESEARCHER` enum value in this build; operational “fourth role” privileges (full clinical read, clinic-wide tools) are **`ADMIN`**. Patients are isolated to their own `user.id`. All other actors must share the resource `clinicId`.
 
@@ -193,9 +249,11 @@ Glance still **derives** pending items from `Plan:` / `Todo:` lines, follow-up-l
 
 ## Testing and integrity
 
+See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for runners, SQLite locking, and `test_runner.py`.
+
 | Command | Result |
 | --- | --- |
-| `npx vitest run` | **61 / 61** passing |
+| `npm run test` or `npx vitest run` | **64 / 64** passing |
 
 Coverage includes:
 
@@ -213,6 +271,6 @@ Coverage includes:
 
 ## More documentation
 
-- [TECHNICAL_BRIEF.md](./TECHNICAL_BRIEF.md) — APIs, cache, provenance, concurrency
+- [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md) — architecture, highlight engine, CareAction, RBAC, trade-offs
 - [docs/CLINICAL_HIGHLIGHT_RULES.txt](./docs/CLINICAL_HIGHLIGHT_RULES.txt) — highlight ontology
 - [ATTRIBUTION.txt](./ATTRIBUTION.txt) — third-party licenses

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/db";
+import { getGlanceCard } from "../src/lib/care-note/glance";
+import { clearGlanceCache } from "../src/lib/cache/glanceCache";
 import {
   extractKeywords,
   importanceScore,
@@ -83,5 +85,36 @@ describe("self-learning importance", () => {
     const afterEdit = await importanceScore(TEXT);
     expect(afterEdit).toBeGreaterThan(afterPin);
     expect(afterEdit).toBe(await importanceScore(TEXT));
+
+    const competing = "nausea";
+    expect(await importanceScore(competing)).toBeLessThan(afterEdit);
+
+    const nauseaAt = fixture.entry.body.toLowerCase().indexOf("fever");
+    await prisma.highlight.create({
+      data: {
+        careEntryId: fixture.entry.id,
+        createdById: fixture.clinician.id,
+        startOffset: Math.max(0, nauseaAt),
+        endOffset: Math.max(5, nauseaAt + 5),
+        excerpt: competing,
+        label: "MEDIUM",
+        source: "MODEL",
+        confidence: 0.9,
+      },
+    });
+
+    clearGlanceCache();
+    const glance = await getGlanceCard(fixture.patient.id, {
+      id: fixture.clinician.id,
+      role: "CLINICIAN",
+      clinicId: fixture.clinic.id,
+    });
+    const ranked = glance.card.highestRiskHighlights;
+    const hyper = ranked.find((item) => item.excerpt.toLowerCase().includes(KEYWORD));
+    const other = ranked.find((item) => item.excerpt.toLowerCase() === competing);
+    expect(hyper).toBeTruthy();
+    expect(other).toBeTruthy();
+    expect(hyper!.importanceScore).toBeGreaterThan(other!.importanceScore);
+    expect(ranked[0]?.id).toBe(hyper!.id);
   });
 });

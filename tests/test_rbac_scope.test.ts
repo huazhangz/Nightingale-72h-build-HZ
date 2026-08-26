@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ForbiddenError,
   NoteSection,
@@ -14,6 +14,11 @@ import {
   type Actor,
 } from "../src/lib/auth/rbac";
 import { REDACTED, redactPhi } from "../src/lib/security/redact";
+import { getGlanceCard } from "../src/lib/care-note/glance";
+import { getPatientTimeline } from "../src/lib/care-note/timeline";
+import { clearGlanceCache } from "../src/lib/cache/glanceCache";
+import { prisma } from "../src/lib/db";
+import { createNoteFixture, deleteNoteFixture } from "./helpers/fixtures";
 
 const CLINIC_A = "clinic-a";
 const CLINIC_B = "clinic-b";
@@ -155,5 +160,77 @@ describe("patient cannot read internal or raw AI notes", () => {
     expect(() =>
       assertCanReadAiScribedNote(staff, NoteSection.AI_DOCTOR_CONSULT_SUMMARY, CLINIC_A),
     ).toThrow(ForbiddenError);
+  });
+});
+
+describe("patient payloads strip internal and AI-scribed content server-side", () => {
+  let fixture: Awaited<ReturnType<typeof createNoteFixture>> & { staff?: { id: string } };
+
+  beforeEach(async () => {
+    clearGlanceCache();
+    fixture = await createNoteFixture("rbac-patient-strip");
+    fixture.staff = await prisma.user.create({
+      data: {
+        email: `staff-${fixture.clinic.slug}@nightingale.test`,
+        name: "Sam Staff",
+        role: "STAFF",
+        passwordHash: "dev-only-not-a-real-hash",
+        clinicId: fixture.clinic.id,
+      },
+    });
+    await prisma.comment.create({
+      data: {
+        careEntryId: fixture.entry.id,
+        authorId: fixture.staff.id,
+        body: "Internal staff comment: follow-up CRP.",
+      },
+    });
+    const excerpt = "cough and fever";
+    const start = fixture.entry.body.indexOf(excerpt);
+    await prisma.highlight.create({
+      data: {
+        careEntryId: fixture.entry.id,
+        createdById: fixture.clinician.id,
+        startOffset: start >= 0 ? start : 0,
+        endOffset: start >= 0 ? start + excerpt.length : 5,
+        excerpt,
+        label: "risk",
+        source: "MODEL",
+        confidence: 0.92,
+      },
+    });
+  });
+
+  afterEach(async () => {
+    clearGlanceCache();
+    if (!fixture) {
+      return;
+    }
+    await deleteNoteFixture({
+      clinicId: fixture.clinic.id,
+      userIds: [fixture.patient.id, fixture.clinician.id, fixture.staff!.id],
+      entryId: fixture.entry.id,
+    });
+  });
+
+  it("returns only a patient-facing summary field and omits comments, raw body, and MODEL highlights", async () => {
+    const patientActor: Actor = {
+      id: fixture.patient.id,
+      role: "PATIENT",
+      clinicId: fixture.clinic.id,
+    };
+    const [entry] = await getPatientTimeline(fixture.patient.id, patientActor);
+    expect(entry.patientFacingSummary).toBeDefined();
+    expect(entry.body).toBeUndefined();
+    expect(entry.comments).toBeUndefined();
+    expect(entry.highlights).toBeUndefined();
+    expect(JSON.stringify(entry)).not.toMatch(/Internal staff comment/);
+    expect(JSON.stringify(entry)).not.toMatch(/follow-up CRP/);
+    expect(JSON.stringify(entry)).not.toMatch(/cough and fever/);
+
+    const glance = await getGlanceCard(fixture.patient.id, patientActor);
+    expect(glance.card.highestRiskHighlights).toEqual([]);
+    expect(glance.card.unresolvedActions).toEqual([]);
+    expect(JSON.stringify(glance.card)).not.toMatch(/Internal staff comment/);
   });
 });

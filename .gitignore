@@ -3,6 +3,17 @@ node_modules/
 .env
 .env.local
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
+*.sqlite-journal
 coverage/
 dist/
+.vitest/
+.vitest-cache/
+node_modules/.vite/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+
