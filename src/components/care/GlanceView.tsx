@@ -7,7 +7,7 @@ import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cac
 import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
 import { RecencyExplainer } from "./RecencyExplainer";
-import { riskBadgeClass } from "../../lib/care-note/risk-tone";
+import { riskBadgeClass, riskTone } from "../../lib/care-note/risk-tone";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
 
@@ -48,6 +48,32 @@ function timelineHref(item: {
     params.set("pointer", item.provenancePointer);
   }
   return `/timeline?${params.toString()}`;
+}
+
+function AlertIcon() {
+  return (
+    <svg className="glance-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M12 3.1 2.7 20.2h18.6L12 3.1Zm0 5.4c.5 0 .8.4.8.9v4.3c0 .5-.3.9-.8.9s-.9-.4-.9-.9V9.4c0-.5.4-.9.9-.9Zm0 8.3c.6 0 1.1.5 1.1 1.1S12.6 19 12 19s-1.1-.5-1.1-1.1.5-1.1 1.1-1.1Z"
+      />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg className="glance-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M4 6.5A1.5 1.5 0 1 0 4 9.5 1.5 1.5 0 0 0 4 6.5Zm4 .3h13v2H8v-2Zm-4 5.2A1.5 1.5 0 1 0 4 15.5 1.5 1.5 0 0 0 4 12Zm4 .3h13v2H8v-2Zm-4 5.2A1.5 1.5 0 1 0 4 21.5 1.5 1.5 0 0 0 4 17.5Zm4 .3h13v2H8v-2Z"
+      />
+    </svg>
+  );
+}
+
+function noteRef(careEntryId: string): string {
+  return careEntryId.slice(-6).toUpperCase();
 }
 
 export function GlanceView({
@@ -117,55 +143,70 @@ export function GlanceView({
         />
       ) : null}
       {!isPatient ? (
-        <div>
-          <h2>{t("glance.riskTitle")}</h2>
+        <section className="glance-block">
+          <header className="glance-block-head">
+            <AlertIcon />
+            <h2>{t("glance.riskTitle")}</h2>
+          </header>
           {risks.length === 0 ? (
             <p className="muted">{t("glance.noRisk")}</p>
           ) : (
-            <ul className="jump-list">
+            <ul className="risk-stack">
               {risks.map((highlight: GlanceHighlight) => (
                 <li key={highlight.id}>
-                  <Link className="jump-link" href={timelineHref(highlight)}>
-                    <span className={`badge ${riskBadgeClass(highlight.label)}`}>
-                      {highlight.source === "HUMAN" ? (
-                        <span aria-hidden="true">
-                          {highlight.createdByRole === "STAFF" ? "🩺" : "⚕️"}
-                        </span>
-                      ) : (
-                        <span aria-hidden="true">🤖</span>
-                      )}{" "}
+                  <Link className="risk-card" href={timelineHref(highlight)}>
+                    <span className={`status-pill ${riskBadgeClass(highlight.label)}`}>
                       {t(riskLabelKey(highlight.label))}
                     </span>
-                    {highlight.excerpt}
+                    <span className="risk-card-body">
+                      {highlight.source === "HUMAN" ? t("highlight.manual") : t("highlight.model")}
+                      {": "}
+                      {highlight.excerpt}
+                    </span>
+                    <span className="risk-card-ref">
+                      {t("glance.viewNote")} #{noteRef(highlight.careEntryId)}
+                    </span>
                   </Link>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </section>
       ) : null}
       {!isPatient ? (
-      <div>
-        <h2>{t("glance.actionsTitle")}</h2>
+      <section className="glance-block">
+        <header className="glance-block-head">
+          <ListIcon />
+          <h2>{t("glance.actionsTitle")}</h2>
+        </header>
         {actions.length === 0 ? (
           <p className="muted">{t("glance.noActions")}</p>
         ) : (
-          <ul className="jump-list">
+          <ul className="action-stack">
             {actions.map((action: GlanceAction) => (
               <li key={action.id}>
-                <Link className="jump-link" href={actionHref(action)}>
-                  {!isPatient ? (
-                    <span className={`badge ${riskBadgeClass("UNRESOLVED_ACTION")}`}>
+                <Link className="action-card" href={actionHref(action)}>
+                  <div className="action-card-head">
+                    <span className="action-pending">{t("action.pending")}</span>
+                    <span className="action-card-title">
                       {t(`action.${action.kind}` as MessageKey)}
                     </span>
-                  ) : null}
-                  {action.text}
+                    <span className={`status-pill ${riskBadgeClass("UNRESOLVED_ACTION")}`}>
+                      {t(`action.${action.kind}` as MessageKey)}
+                    </span>
+                  </div>
+                  <div className={`action-subblock tone-${riskTone("UNRESOLVED_ACTION")}`}>
+                    <p className="action-sub-meta">
+                      {t("glance.viewNote")} #{noteRef(action.careEntryId)}
+                    </p>
+                    <p className="action-sub-text">{action.text}</p>
+                  </div>
                 </Link>
               </li>
             ))}
           </ul>
         )}
-      </div>
+      </section>
       ) : null}
     </section>
   );

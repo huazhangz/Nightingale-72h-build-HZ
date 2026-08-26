@@ -1,0 +1,62 @@
+===============================================================================
+NIGHTINGALE CLINICAL DETERMINISTIC HIGHLIGHTING SPECIFICATION v1.0
+===============================================================================
+
+1. ONTOLOGY & RISK TIER MAPPING
+-------------------------------------------------------------------------------
+System enforces 5 distinct functional categories with fixed risk floors and 
+pastel UI themes to prevent alert fatigue:
+
+[CRITICAL / HIGH RISK]
+- Categories: Critical Symptoms, Severe Vitals, Anaphylactic Reactions.
+- Terms: chest pain, shortness of breath, anaphylaxis, severe respiratory distress, SPO2 < 90%, BP > 180/110.
+- Color Token: Soft Red (bg-red-500/15 text-red-700 border-red-300)
+- Risk Floor: CRITICAL
+
+[WARNING / MEDIUM RISK]
+- Categories: Abnormal Labs, High Fever, Moderate Vitals.
+- Terms: hyperpyrexia, fever, elevated WBC, acute confusion, tachycardic.
+- Color Token: Soft Amber (bg-amber-500/15 text-amber-800 border-amber-300)
+- Risk Floor: MEDIUM
+
+[INFO / MEDICATIONS & ALLERGIES]
+- Categories: Active Prescriptions, Known Allergies.
+- Terms: penicillin, aspirin, metformin, amlodipine, lisinopril, insulin.
+- Color Token: Soft Green (bg-green-500/15 text-green-800 border-green-300)
+- Risk Floor: LOW
+
+[UNRESOLVED ACTIONS]
+- Categories: Pending Diagnostics, Outstanding Lab Orders, Follow-ups.
+- Terms: needs lab order, pending echo, follow-up required, order STAT CT.
+- Color Token: Soft Blue (bg-blue-500/15 text-blue-800 border-blue-300)
+- Risk Floor: ACTION_REQUIRED
+
+[PATIENT INSIGHTS]
+- Categories: Patient Concerns, Subjective Complaints.
+- Terms: nausea, insomnia, anxious, dizziness, fatigue.
+- Color Token: Soft Purple (bg-purple-500/15 text-purple-800 border-purple-300)
+- Risk Floor: LOW
+
+2. CONTEXT & NEGATION RULES (NegEx Principles)
+-------------------------------------------------------------------------------
+- Negation Filter: Skip highlighting if target phrase is preceded within 1-5 words
+  by negation triggers: "no", "denies", "negative for", "without", "ruled out".
+  Example: "Patient denies chest pain" -> "chest pain" MUST NOT BE HIGHLIGHTED.
+- Historical Demotion: Phrases preceded by "history of", "past history", or 
+  "family history of" are automatically demoted to INFO / LOW risk tier.
+
+3. DEDUPLICATION & VISUAL FATIGUE REDUCTION
+-------------------------------------------------------------------------------
+- Single-Match Rule: Only the FIRST occurrence of a target entity in a single 
+  care note body gets auto-highlighted. Subsequent duplicate words remain plain text.
+- Overlap Protection (Longest-Match-First): If both "pain" and "chest pain" 
+  match, highlight "chest pain" as a single unified span.
+- Low-Signal Blacklist: Suppress standalone ambiguous terms ("pain", "cough", 
+  "normal", "well") unless qualified by severe/specific modifiers.
+
+4. DUAL-SOURCE PROVENANCE & OVERRIDE
+-------------------------------------------------------------------------------
+- Auto-Highlights: Rendered with source="MODEL", showing a subtle AI/sparkle badge.
+- Manual Highlights: Created by Clinicians/Staff (source="HUMAN"), taking absolute
+  visual and semantic precedence over any overlapping auto-highlight.
+===============================================================================
