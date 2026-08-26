@@ -1,0 +1,246 @@
+:root {
+  --bg: #f3efe6;
+  --ink: #1c2118;
+  --muted: #4d5848;
+  --paper: #fffaf1;
+  --line: #cfc6b4;
+  --accent: #1f5c45;
+  --accent-hover: #174736;
+  --danger: #8a2f2b;
+  --focus: #0f3d2e;
+  --chip: #e7efe8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), "IBM Plex Sans", "Segoe UI", sans-serif;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+.brand {
+  font-family: var(--font-serif), "Source Serif 4", Georgia, serif;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 1.85rem;
+  margin: 0 0 1rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.4rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+.app-shell {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 3rem;
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.brand {
+  margin: 0.15rem 0 0;
+  font-size: 1.35rem;
+}
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  text-decoration: none;
+  color: var(--ink);
+}
+
+.nav-link.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #f7fff8;
+}
+
+.main {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.25rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+}
+
+.field.compact {
+  min-width: 220px;
+}
+
+label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+input,
+select,
+textarea {
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+textarea {
+  min-height: 180px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.btn:focus-visible,
+.nav-link:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.65rem 1.1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #f7fff8;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.status {
+  color: var(--muted);
+}
+
+.status.error {
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.timeline,
+.search-results,
+.comment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.timeline-item,
+.search-results li,
+.glance-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1rem;
+  background: #fff;
+}
+
+.meta {
+  margin: 0.2rem 0 0.6rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  padding: 0;
+}
+
+.chip {
+  background: var(--chip);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.glance-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.glance-score .score {
+  font-size: 2.4rem;
+  margin: 0;
+  font-family: var(--font-serif), "Source Serif 4", Georgia, serif;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 0.85rem 0.85rem 2rem;
+  }
+
+  .main {
+    padding: 1rem;
+  }
+}

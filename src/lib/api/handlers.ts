@@ -1,7 +1,59 @@
+import type { Role } from "@prisma/client";
 import { requireActor, errorResponse } from "../auth/session";
 import { getGlanceCard } from "../care-note/glance";
 import { getPatientTimeline } from "../care-note/timeline";
 import { createCareEntry, patchCareEntry, revertEntry } from "../care-note/entries";
+import { prisma } from "../db";
+
+const DEMO_USERS: Array<{ email: string; name: string; role: Role }> = [
+  { email: "patient@nightingale.test", name: "Pat Patient", role: "PATIENT" },
+  { email: "staff@nightingale.test", name: "Sam Staff", role: "STAFF" },
+  { email: "clinician@nightingale.test", name: "Casey Clinician", role: "CLINICIAN" },
+  { email: "admin@nightingale.test", name: "Avery Admin", role: "ADMIN" },
+];
+
+export async function handleDemoBootstrap(): Promise<Response> {
+  try {
+    const clinic = await prisma.clinic.upsert({
+      where: { slug: "nightingale-demo" },
+      update: { name: "Nightingale Demo Clinic" },
+      create: { name: "Nightingale Demo Clinic", slug: "nightingale-demo" },
+    });
+
+    const users = [];
+    for (const user of DEMO_USERS) {
+      users.push(
+        await prisma.user.upsert({
+          where: { email: user.email },
+          update: { name: user.name, role: user.role, clinicId: clinic.id },
+          create: {
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            clinicId: clinic.id,
+            passwordHash: "dev-only-not-a-real-hash",
+          },
+        }),
+      );
+    }
+
+    const patient = users.find((user) => user.role === "PATIENT");
+    const clinician = users.find((user) => user.role === "CLINICIAN");
+    return Response.json({
+      clinic: { id: clinic.id, name: clinic.name },
+      users: users.map((user) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      })),
+      patientId: patient?.id ?? null,
+      defaultUserId: clinician?.id ?? users[0]?.id ?? null,
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
 export async function handlePatientTimeline(request: Request, patientId: string): Promise<Response> {
   try {
