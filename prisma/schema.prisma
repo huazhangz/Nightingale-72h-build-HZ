@@ -7,6 +7,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
 enum Role {
   PATIENT
   STAFF
@@ -40,11 +46,13 @@ enum FeedbackVerdict {
 }
 
 model Clinic {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  /// Code patients enter to self-register with this clinic; null disables self-registration.
+  enrollmentCode String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   users   User[]
   entries CareEntry[]
@@ -79,6 +87,17 @@ model User {
   agentRuns          AgentRun[]              @relation("AgentRunActor")
   patientAgentRuns   AgentRun[]              @relation("AgentRunPatient")
   decidedProposals   AgentFollowupProposal[] @relation("ProposalDecider")
+  riskAssessments    RiskAssessment[]        @relation("RiskPatient")
+  isServiceAccount   Boolean                 @default(false)
+  status             UserStatus              @default(ACTIVE)
+  failedLoginCount   Int                     @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  /// Incremented on password change, disable, or "sign out everywhere": older sessions stop working.
+  sessionVersion     Int                     @default(0)
+  passwordChangedAt  DateTime?
+  invitations        Invitation[]            @relation("InvitationUser")
+  invitationsSent    Invitation[]            @relation("InvitationCreator")
 
   @@index([clinicId, role])
   @@index([employeeCode])
@@ -309,4 +328,72 @@ model AgentFollowupProposal {
 
   @@index([patientId, status])
   @@index([runId])
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskAssessmentStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  SUPERSEDED
+}
+
+/// Patient-level acuity from the risk triage agent (or the deterministic rules when no model is
+/// available). Rows double as the work queue: note writes enqueue PENDING rows, a worker runs them.
+model RiskAssessment {
+  id             String               @id @default(cuid())
+  clinicId       String
+  patientId      String
+  patient        User                 @relation("RiskPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  status         RiskAssessmentStatus @default(PENDING)
+  trigger        String
+  requestedById  String?
+  attempts       Int                  @default(0)
+  inputHash      String?
+  method         String?
+  modelLevel     RiskLevel?
+  floorLevel     RiskLevel?
+  finalLevel     RiskLevel?
+  review         String?
+  confidence     String?
+  summary        String?
+  drivers        Json?
+  floorReasons   Json?
+  guardrail      Json?
+  agentRunId     String?
+  error          String?
+  overrideLevel  RiskLevel?
+  overrideReason String?
+  overriddenById String?
+  overriddenAt   DateTime?
+  createdAt      DateTime             @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  @@index([patientId, createdAt])
+  @@index([status, createdAt])
+  @@index([clinicId, status])
+}
+
+/// One-time activation link for an invited account (staff, clinician, or a patient created by staff).
+/// Only a SHA-256 hash of the token is stored.
+model Invitation {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation("InvitationUser", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  createdById String?
+  createdBy   User?     @relation("InvitationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
 }

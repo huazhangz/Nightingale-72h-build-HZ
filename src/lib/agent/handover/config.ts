@@ -1,6 +1,6 @@
 import { createAnthropicClient, type ClientFactory } from "../core/client";
 import { DEFAULT_RUN_CONFIG } from "../core/run-agent";
-import { scriptedFetch } from "../core/testing";
+import { scriptedFetch, type Responder } from "../core/testing";
 import type { Effort } from "../core/types";
 import { DEFAULT_PROMPT_VERSION, isPromptVersion, type PromptVersion } from "./prompts";
 import { CLEAN_PROFILE, simulatedResponder } from "./simulated-client";
@@ -75,7 +75,11 @@ export function isAgentAvailable(settings: HandoverAgentSettings, env: NodeJS.Pr
  * Client factory for one run. "simulated" routes the real SDK Tool Runner through a scripted fetch
  * that answers with the offline rule policy; "anthropic" uses the real API with SDK-managed retries.
  */
-export function createClientFactory(settings: HandoverAgentSettings, env: NodeJS.ProcessEnv = process.env): ClientFactory {
+export function createClientFactory(
+  settings: HandoverAgentSettings,
+  offline: () => Responder = () => simulatedResponder(CLEAN_PROFILE, SIMULATED_MODEL),
+  env: NodeJS.ProcessEnv = process.env,
+): ClientFactory {
   if (!agentsEnabled(env)) {
     throw new AgentNotConfiguredError();
   }
@@ -84,7 +88,7 @@ export function createClientFactory(settings: HandoverAgentSettings, env: NodeJS
       createAnthropicClient({
         apiKey: "offline-simulated",
         maxRetries: 0,
-        fetch: scriptedFetch(simulatedResponder(CLEAN_PROFILE, SIMULATED_MODEL)).fetch,
+        fetch: scriptedFetch(offline()).fetch,
         onResponseStatus,
       });
   }

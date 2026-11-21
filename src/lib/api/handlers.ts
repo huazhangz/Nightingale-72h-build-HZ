@@ -4,7 +4,9 @@ import { runHandoverAgent } from "../agent/handover/agent";
 import { AgentNotConfiguredError, agentSettingsFromEnv, isAgentAvailable } from "../agent/handover/config";
 import { isPromptVersion } from "../agent/handover/prompts";
 import { decideProposal, latestHandoverRun, publicRunFromResult } from "../agent/handover/repository";
-import { agentRunLimiter } from "../agent/rate-limit";
+import { agentRunLimiter, SlidingWindowLimiter } from "../agent/rate-limit";
+import { drainRiskQueue, scheduleRiskDrain } from "../agent/risk/queue";
+import { getPatientRisk, listWorklist, overridePatientRisk, requestRiskAssessment } from "../agent/risk/repository";
 import { clearedSessionCookie, sessionCookie, signSession } from "../auth/session-token";
 import { assertPatientIsolation } from "../auth/rbac";
 import { verifyPatientLogin, verifyStaffLogin } from "../auth/login";
@@ -195,6 +197,7 @@ export async function handleCreateEntry(request: Request): Promise<Response> {
       body: payload.body,
       encounterAt: payload.encounterAt,
     });
+    scheduleRiskDrain();
     return Response.json({ entry }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
@@ -221,6 +224,7 @@ export async function handlePatchEntry(request: Request, entryId: string): Promi
       baseVersion,
       title: payload.title,
     });
+    scheduleRiskDrain();
     return Response.json(result);
   } catch (error) {
     return errorResponse(error);
@@ -235,6 +239,7 @@ export async function handleRevertEntry(request: Request, entryId: string): Prom
       return Response.json({ error: "targetVersion is required" }, { status: 400 });
     }
     const entry = await revertEntry(actor, entryId, payload.targetVersion);
+    scheduleRiskDrain();
     return Response.json({ entry });
   } catch (error) {
     return errorResponse(error);
@@ -277,6 +282,7 @@ export async function handleCreateHighlight(request: Request, entryId: string): 
       excerpt: payload.excerpt,
       label: payload.label,
     });
+    scheduleRiskDrain();
     return Response.json({ highlight }, { status: 201 });
   } catch (error) {
     return errorResponse(error);
@@ -468,5 +474,78 @@ export async function handleDecideProposal(request: Request, proposalId: string)
     return Response.json({ proposal: await decideProposal(actor, proposalId, payload.decision) });
   } catch (error) {
     return agentErrorResponse(error);
+  }
+}
+
+const riskRequestLimiter = new SlidingWindowLimiter(10, 10 * 60 * 1000);
+
+export async function handleWorklist(request: Request): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    return Response.json({ patients: await listWorklist(actor) });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleGetRisk(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    return Response.json(await getPatientRisk(actor, patientId));
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleRequestRisk(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    const limit = riskRequestLimiter.take(actor.id);
+    if (!limit.allowed) {
+      return Response.json(
+        { error: "Too many reassessments; try again shortly.", code: "RATE_LIMITED" },
+        { status: 429, headers: { "retry-after": String(Math.ceil(limit.retryAfterMs / 1000)) } },
+      );
+    }
+    return Response.json(await requestRiskAssessment(actor, patientId));
+  } catch (error) {
+    return agentErrorResponse(error);
+  }
+}
+
+export async function handleOverrideRisk(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    const payload = (await request.json().catch(() => ({}))) as { level?: unknown; reason?: unknown };
+    return Response.json(
+      await overridePatientRisk(actor, patientId, {
+        level: typeof payload.level === "string" ? payload.level : "",
+        reason: typeof payload.reason === "string" ? payload.reason : "",
+      }),
+    );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+/** Cron hook: POST with header x-cron-secret = NIGHTINGALE_CRON_SECRET. Disabled when the secret is unset. */
+export async function handleDrainRiskQueue(request: Request): Promise<Response> {
+  const secret = process.env.NIGHTINGALE_CRON_SECRET;
+  if (!secret || secret.length < 16) {
+    return Response.json({ error: "Not found" }, { status: 404 });
+  }
+  const provided = request.headers.get("x-cron-secret") ?? "";
+  const { timingSafeEqual } = await import("node:crypto");
+  const ok = provided.length === secret.length && timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
+  if (!ok) {
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+  try {
+    return Response.json({ processed: await drainRiskQueue({ limit: 25 }) });
+  } catch (error) {
+    return errorResponse(error);
   }
 }

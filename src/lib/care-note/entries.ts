@@ -14,6 +14,7 @@ import { applyOptimisticEdit } from "./concurrency";
 import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
 import { syncConsultationStage } from "./progress-engine";
 import { revertCareEntry } from "./revision";
+import { enqueueRiskAssessment } from "../agent/risk/queue";
 
 function writeRole(actor: Actor): NoteAuthorRole {
   if (actor.role === "STAFF" || actor.role === "CLINICIAN") {
@@ -55,6 +56,12 @@ export async function createCareEntry(
   });
   await syncLocalRiskHighlights(entry.id, entry.body, actor.id);
   await syncConsultationStage(entry.id);
+  await enqueueRiskAssessment({
+    patientId: entry.patientId,
+    clinicId: entry.clinicId,
+    trigger: "NOTE_CREATED",
+    requestedById: actor.id,
+  });
   return entry;
 }
 
@@ -63,13 +70,20 @@ export async function patchCareEntry(
   entryId: string,
   input: { body: string; baseVersion: number; title?: string },
 ) {
-  return applyOptimisticEdit({
+  const result = await applyOptimisticEdit({
     entryId,
     userId: actor.id,
     newContent: redactPhi(input.body),
     baseVersion: input.baseVersion,
     title: input.title !== undefined ? redactPhi(input.title) : undefined,
   });
+  await enqueueRiskAssessment({
+    patientId: result.entry.patientId,
+    clinicId: result.entry.clinicId,
+    trigger: "NOTE_UPDATED",
+    requestedById: actor.id,
+  });
+  return result;
 }
 
 export async function revertEntry(actor: Actor, entryId: string, targetVersion: number) {
@@ -85,5 +99,11 @@ export async function revertEntry(actor: Actor, entryId: string, targetVersion: 
   assertCanEditNote(actor, { authorRole, clinicId: entry.clinicId }, { hasVersionSnapshot: true });
   const reverted = await revertCareEntry(entryId, targetVersion, actor.id);
   await syncConsultationStage(entryId);
+  await enqueueRiskAssessment({
+    patientId: reverted.patientId,
+    clinicId: reverted.clinicId,
+    trigger: "NOTE_REVERTED",
+    requestedById: actor.id,
+  });
   return reverted;
 }

@@ -1,4 +1,5 @@
 import type { Highlight } from "@prisma/client";
+import { enqueueRiskAssessment } from "../agent/risk/queue";
 import { type Actor, ForbiddenError, assertClinicScope, assertPatientIsolation } from "../auth/rbac";
 import { prisma } from "../db";
 import { redactPhi } from "../security/redact";
@@ -66,5 +67,11 @@ export async function createHumanHighlight(
   });
   await invalidateGlanceForCareEntry(entry.id);
   await syncConsultationStage(entry.id);
+  await enqueueRiskAssessment({
+    patientId: entry.patientId,
+    clinicId: entry.clinicId,
+    trigger: "HIGHLIGHT_ADDED",
+    requestedById: actor.id,
+  });
   return highlight;
 }
