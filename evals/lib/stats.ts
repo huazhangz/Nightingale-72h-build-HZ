@@ -1,4 +1,4 @@
-import { mulberry32 } from "../../src/lib/agent/runtime/random";
+import { mulberry32 } from "../../src/lib/agent/core/random";
 
 /**
  * Statistics for agent evaluation. Pure functions, no dependencies.

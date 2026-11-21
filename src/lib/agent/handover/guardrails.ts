@@ -1,7 +1,7 @@
-import { findTermMentions } from "../../care-note/keyword-highlights";
 import { clinicalFloorRank } from "../../care-note/risk-tone";
 import { redactPhi } from "../../security/redact";
-import type { ClinicalTimelineEntry, EvidenceLedger } from "./context";
+import { checkCitation, negationConflict } from "../shared/citations";
+import type { ClinicalTimelineEntry, EvidenceLedger } from "../shared/record-context";
 import {
   SEVERITY_RANK,
   type Category,
@@ -13,8 +13,10 @@ import {
   type SummaryItem,
   type VerifiedCitation,
 } from "./schema";
-import { looksLikeInjectedInstruction } from "./injection";
-import { containsNormalized, isGroundedQuote, normalizeForMatch, wordCount } from "./text";
+import { looksLikeInjectedInstruction } from "../shared/injection";
+import { containsNormalized, normalizeForMatch } from "../shared/text";
+
+export { MIN_QUOTE_WORDS, negationConflict } from "../shared/citations";
 
 /**
  * Deterministic post-output validation. Nothing here depends on the prompt: the model can be
@@ -30,8 +32,6 @@ import { containsNormalized, isGroundedQuote, normalizeForMatch, wordCount } fro
  *      rejected.
  *   5. Statements are re-redacted before they leave the server.
  */
-
-export const MIN_QUOTE_WORDS = 2;
 
 /** A finding the safety floor protects (critical-tier highlight visible to the actor). */
 export type CriticalFinding = {
@@ -66,52 +66,6 @@ export function criticalFindingsFor(timeline: ClinicalTimelineEntry[]): Critical
     }
   }
   return findings;
-}
-
-type CitationCheck = { ok: true; citation: VerifiedCitation } | { ok: false; reason: RejectionReason };
-
-function checkCitation(citation: { note_id: string; quote: string }, ledger: EvidenceLedger): CitationCheck {
-  const note = ledger.readNotes.get(citation.note_id);
-  if (!note) {
-    return { ok: false, reason: ledger.surfacedNoteIds.has(citation.note_id) ? "UNREAD_NOTE" : "UNKNOWN_NOTE" };
-  }
-  const source = ledger.sourceText(citation.note_id);
-  if (source === null) {
-    return { ok: false, reason: "UNREAD_NOTE" };
-  }
-  if (wordCount(citation.quote) < MIN_QUOTE_WORDS) {
-    return { ok: false, reason: "QUOTE_TOO_SHORT" };
-  }
-  if (!isGroundedQuote(citation.quote, source)) {
-    return { ok: false, reason: "UNGROUNDED_QUOTE" };
-  }
-  return {
-    ok: true,
-    citation: {
-      noteId: note.noteId,
-      quote: redactPhi(citation.quote.trim()),
-      title: note.title,
-      encounterAt: note.encounterAt,
-    },
-  };
-}
-
-/**
- * The statement affirms a lexicon phrase (e.g. "has chest pain") while every mention of that phrase
- * in its own quotes is negated ("denies chest pain"). Deterministic, conservative: if a quote does not
- * mention the phrase at all, no judgement is made.
- */
-export function negationConflict(statement: string, quotes: string[]): string | null {
-  const affirmed = findTermMentions(statement).filter((mention) => mention.context === "AFFIRMED");
-  for (const mention of affirmed) {
-    const quoteMentions = quotes.flatMap((quote) =>
-      findTermMentions(quote).filter((item) => item.termKey === mention.termKey),
-    );
-    if (quoteMentions.length > 0 && quoteMentions.every((item) => item.context === "NEGATED")) {
-      return mention.excerpt.toLowerCase();
-    }
-  }
-  return null;
 }
 
 function covers(item: { statement: string; citations: VerifiedCitation[] }, finding: CriticalFinding): boolean {

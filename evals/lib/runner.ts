@@ -2,13 +2,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from "node:path";
 import { runHandoverAgent, type HandoverRunResult } from "../../src/lib/agent/handover/agent";
 import { promptHash, type PromptVersion } from "../../src/lib/agent/handover/prompts";
-import { SimulatedHandoverClient, type SimulationProfile } from "../../src/lib/agent/handover/simulated-client";
-import { AnthropicModelClient } from "../../src/lib/agent/runtime/anthropic-client";
-import { hashSeed } from "../../src/lib/agent/runtime/random";
-import { INFRASTRUCTURE_OUTCOMES, type Effort, type LoopOutcome, type ModelClient, type UsageTotals } from "../../src/lib/agent/runtime/types";
+import { simulatedResponder, type SimulationProfile } from "../../src/lib/agent/handover/simulated-client";
+import { createAnthropicClient, type ClientFactory } from "../../src/lib/agent/core/client";
+import { hashSeed } from "../../src/lib/agent/core/random";
+import { scriptedFetch, type Responder } from "../../src/lib/agent/core/testing";
+import { INFRASTRUCTURE_OUTCOMES, type Effort, type RunOutcome, type UsageTotals } from "../../src/lib/agent/core/types";
 import { clearGlanceCache } from "../../src/lib/cache/glanceCache";
 import { caseSetHash, type EvalCase } from "../cases";
-import { NullClient, OracleClient } from "./baselines";
+import { nullResponder, oracleResponder } from "./baselines";
 import { destroyCase, materializeCase, type MaterializedCase } from "./fixtures";
 import { GRADER_VERSION, gradeTrial, type Check, type FailureClass, type TrialMetrics } from "./graders";
 import { costUsd } from "./pricing";
@@ -40,7 +41,7 @@ export type ResultRow = {
   stratum: string;
   tags: string[];
   rep: number;
-  outcome: LoopOutcome;
+  outcome: RunOutcome;
   passed: boolean;
   failures: FailureClass[];
   checks: Check[];
@@ -93,21 +94,27 @@ export function loadResults(outDir: string): { results: ResultRow[]; errors: Err
   };
 }
 
-function clientFor(variant: Variant, materialized: MaterializedCase, rep: number, shared: { anthropic?: ModelClient }): ModelClient {
-  switch (variant.kind) {
-    case "anthropic":
-      shared.anthropic ??= new AnthropicModelClient({ timeoutMs: 120_000 });
-      return shared.anthropic;
-    case "simulated":
-      return new SimulatedHandoverClient({
+/** Offline variants drive the real SDK Tool Runner through a scripted fetch; anthropic uses the API. */
+function clientFactoryFor(variant: Variant, materialized: MaterializedCase, rep: number): ClientFactory {
+  if (variant.kind === "anthropic") {
+    return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, onResponseStatus });
+  }
+  let responder: Responder;
+  if (variant.kind === "simulated") {
+    responder = simulatedResponder(
+      {
         ...(variant.profile ?? { omitRate: 0, fabricateRate: 0, negationFlipRate: 0, proposeFollowups: true, seed: 1 }),
         seed: hashSeed(`${variant.id}|${materialized.evalCase.id}|${rep}`),
-      });
-    case "oracle":
-      return new OracleClient(materialized);
-    case "null":
-      return new NullClient();
+      },
+      variant.model,
+    );
+  } else if (variant.kind === "oracle") {
+    responder = oracleResponder(materialized);
+  } else {
+    responder = nullResponder();
   }
+  return ({ onResponseStatus }) =>
+    createAnthropicClient({ apiKey: "offline", maxRetries: 0, fetch: scriptedFetch(responder).fetch, onResponseStatus });
 }
 
 async function pool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
@@ -130,7 +137,7 @@ function rowFrom(
   startedAt: Date,
 ): ResultRow {
   const grade = gradeTrial(materialized, result);
-  const modelCalls = result.internal.loop.trace.filter((event) => event.type === "model_call");
+  const modelCalls = result.internal.run.trace.filter((event) => event.type === "model_turn");
   return {
     variant: variant.id,
     caseId: materialized.evalCase.id,
@@ -145,9 +152,9 @@ function rowFrom(
     usage: result.usage,
     costUsd: costUsd(result.servedModel ?? variant.model, result.usage),
     wallMs: result.durationMs,
-    modelLatencyMs: modelCalls.reduce((sum, event) => sum + (event.type === "model_call" ? event.latencyMs : 0), 0),
+    modelLatencyMs: modelCalls.reduce((sum, event) => sum + (event.type === "model_turn" ? event.latencyMs : 0), 0),
     modelCalls: modelCalls.length,
-    retries: result.internal.loop.trace.filter((event) => event.type === "model_retry").length,
+    retries: result.internal.run.trace.filter((event) => event.type === "http_retry").length,
     requestedModel: variant.model,
     servedModel: result.servedModel,
     fallbackUsed: result.fallbackUsed,
@@ -216,7 +223,6 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
     }
   }
 
-  const shared: { anthropic?: ModelClient } = {};
   let finished = 0;
   let scored = 0;
   let errors = 0;
@@ -228,7 +234,7 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
       try {
         clearGlanceCache();
         result = await runHandoverAgent(item.reader, item.patientId, {
-          client: clientFor(variant, item, rep, shared),
+          clientFactory: clientFactoryFor(variant, item, rep),
           promptVersion: variant.promptVersion,
           settings: {
             model: variant.model,
@@ -256,7 +262,7 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
       const servedMismatch =
         variant.kind === "anthropic" &&
         !result.fallbackUsed &&
-        result.internal.loop.servedModels.some((served) => served !== variant.model);
+        result.internal.run.servedModels.some((served) => served !== variant.model);
       if (INFRASTRUCTURE_OUTCOMES.has(result.outcome) || servedMismatch) {
         errors += 1;
         const row: ErrorRow = {
@@ -265,7 +271,7 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
           rep,
           errorClass: servedMismatch ? "served_model_mismatch" : result.outcome,
           message: servedMismatch
-            ? `served ${result.internal.loop.servedModels.join(",")} for ${variant.model}`
+            ? `served ${result.internal.run.servedModels.join(",")} for ${variant.model}`
             : `${result.error?.kind ?? ""} ${result.error?.message ?? ""}`.trim(),
           startedAt: startedAt.toISOString(),
         };
@@ -287,8 +293,8 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
             rep,
             expectations: item.expect,
             outcome: result.outcome,
-            messages: result.internal.loop.messages,
-            trace: result.internal.loop.trace,
+            messages: result.internal.run.messages,
+            trace: result.internal.run.trace,
             submission: result.internal.submission,
             guardrail: result.guardrail,
             summary: result.summary,

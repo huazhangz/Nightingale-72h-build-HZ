@@ -1,4 +1,4 @@
-import { normalizeForMatch } from "../../src/lib/agent/handover/text";
+import { normalizeForMatch } from "../../src/lib/agent/shared/text";
 
 /**
  * Turn clinician feedback on highlights into evaluation expectations. This is the bridge the

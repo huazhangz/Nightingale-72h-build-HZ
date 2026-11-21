@@ -1,26 +1,25 @@
-import type { Prisma } from "@prisma/client";
 import { ForbiddenError, assertClinicScope, type Actor } from "../../auth/rbac";
 import { prisma } from "../../db";
-import { runAgentLoop, type AgentLoopResult, type LoopHooks } from "../runtime/loop";
-import { DEFAULT_RETRY_POLICY } from "../runtime/retry";
-import type { LoopOutcome, ModelClient, UsageTotals } from "../runtime/types";
-import { agentSettingsFromEnv, createModelClient, type HandoverAgentSettings } from "./config";
-import { createHandoverContext, type EvidenceLedger } from "./context";
+import type { ClientFactory } from "../core/client";
+import type { RunAgentResult } from "../core/run-agent";
+import type { RunOutcome, UsageTotals } from "../core/types";
+import { executeAgent, failAgentRun, finishAgentRun } from "../shared/execute";
+import { createRecordContext, type EvidenceLedger } from "../shared/record-context";
+import { agentSettingsFromEnv, createClientFactory, type HandoverAgentSettings } from "./config";
 import { applyGuardrails, criticalFindingsFor, type CriticalFinding } from "./guardrails";
 import { handoverUserMessage, promptHash, systemPrompt, type PromptVersion } from "./prompts";
 import { HandoverSubmission, type GuardrailReport, type HandoverSummary } from "./schema";
-import { HANDOVER_TOOLS } from "./tools";
+import { HANDOVER_TOOLS, type HandoverContext } from "./tools";
 
 export const HANDOVER_AGENT = "handover";
 
 export type HandoverRunOptions = {
   promptVersion?: PromptVersion;
-  /** Inject a model client (tests, evaluation). Defaults to the configured client. */
-  client?: ModelClient;
+  /** Inject the client factory (tests, evaluation). Defaults to the configured client. */
+  clientFactory?: ClientFactory;
   settings?: Partial<HandoverAgentSettings>;
   signal?: AbortSignal;
   now?: Date;
-  hooks?: LoopHooks;
 };
 
 export type PublicProposal = {
@@ -36,7 +35,7 @@ export type PublicProposal = {
 export type HandoverRunResult = {
   runId: string;
   status: "SUCCEEDED" | "FAILED";
-  outcome: LoopOutcome;
+  outcome: RunOutcome;
   /** True when the model did not deliver: the summary holds only safety-rule findings. */
   degraded: boolean;
   summary: HandoverSummary;
@@ -56,7 +55,7 @@ export type HandoverRunResult = {
     submission: HandoverSubmission | null;
     ledger: EvidenceLedger;
     criticalFindings: CriticalFinding[];
-    loop: AgentLoopResult;
+    run: RunAgentResult;
   };
 };
 
@@ -66,10 +65,10 @@ export function assertAgentActor(actor: Actor): void {
   }
 }
 
-async function loadPatientForAgent(actor: Actor, patientId: string) {
+export async function loadPatientForAgent(actor: Actor, patientId: string) {
   const patient = await prisma.user.findUniqueOrThrow({ where: { id: patientId } });
   if (patient.role !== "PATIENT" || !patient.clinicId) {
-    throw new ForbiddenError("Handover summaries are only available for patient records");
+    throw new ForbiddenError("Agent results are only available for patient records");
   }
   assertClinicScope(actor, patient.clinicId);
   return patient;
@@ -87,50 +86,40 @@ export async function runHandoverAgent(
   assertAgentActor(actor);
   const patient = await loadPatientForAgent(actor, patientId);
   const settings = { ...agentSettingsFromEnv(), ...options.settings };
-  const client = options.client ?? createModelClient(settings);
+  const clientFactory = options.clientFactory ?? createClientFactory(settings);
   const promptVersion = options.promptVersion ?? settings.promptVersion;
   const now = options.now ?? new Date();
-  const context = createHandoverContext(actor, patientId, now);
+  const context: HandoverContext = { ...createRecordContext(actor, patientId, now), proposals: [] };
 
-  const run = await prisma.agentRun.create({
-    data: {
-      agent: HANDOVER_AGENT,
-      clinicId: patient.clinicId!,
-      patientId,
-      actorId: actor.id,
-      actorRole: actor.role,
-      promptVersion,
-      promptHash: promptHash(promptVersion),
-      model: settings.model,
-    },
-  });
-
-  const loop = await runAgentLoop({
-    client,
+  const { runId, result } = await executeAgent({
+    agent: HANDOVER_AGENT,
+    clinicId: patient.clinicId!,
+    patientId,
+    actor,
+    promptVersion,
+    promptHash: promptHash(promptVersion),
+    clientFactory,
     config: {
       model: settings.model,
       system: systemPrompt(promptVersion),
-      maxSteps: settings.maxSteps,
+      maxIterations: settings.maxIterations,
       maxTokens: settings.maxTokens,
       effort: settings.effort,
       tokenBudget: settings.tokenBudget,
       deadlineMs: settings.deadlineMs,
-      retry: DEFAULT_RETRY_POLICY,
       maxNudges: 1,
       fallbacks: settings.fallbacks,
-      promptCaching: true,
     },
     tools: HANDOVER_TOOLS,
     context,
-    initialMessages: [{ role: "user", content: handoverUserMessage({ readerRole: actor.role, today: now }) }],
+    messages: [{ role: "user", content: handoverUserMessage({ readerRole: actor.role, today: now }) }],
     signal: options.signal,
-    hooks: options.hooks,
   });
 
   try {
     const criticalFindings = criticalFindingsFor(await context.timeline());
-    const submitted = loop.outcome === "SUBMITTED";
-    const submission = submitted ? HandoverSubmission.parse(loop.submission) : null;
+    const submitted = result.outcome === "SUBMITTED";
+    const submission = submitted ? HandoverSubmission.parse(result.submission) : null;
     // A failed run still yields the deterministic safety floor, so the reader is never left with nothing.
     const { items, report } = applyGuardrails({
       submission: submission ?? { items: [] },
@@ -146,7 +135,7 @@ export async function runHandoverAgent(
           context.proposals.map((proposal) =>
             prisma.agentFollowupProposal.create({
               data: {
-                runId: run.id,
+                runId,
                 patientId,
                 ref: proposal.ref,
                 sourceNoteId: proposal.sourceNoteId,
@@ -159,40 +148,21 @@ export async function runHandoverAgent(
         )
       : [];
 
-    const servedModel = loop.servedModels.at(-1) ?? null;
-    await prisma.agentRun.update({
-      where: { id: run.id },
-      data: {
-        status,
-        outcome: loop.outcome,
-        errorKind: loop.error?.kind ?? null,
-        servedModel,
-        fallbackUsed: loop.fallbackUsed,
-        steps: loop.steps,
-        inputTokens: loop.usage.inputTokens,
-        outputTokens: loop.usage.outputTokens,
-        cacheReadTokens: loop.usage.cacheReadInputTokens,
-        cacheWriteTokens: loop.usage.cacheCreationInputTokens,
-        durationMs: loop.durationMs,
-        trace: loop.trace as unknown as Prisma.InputJsonValue,
-        summary: summary as unknown as Prisma.InputJsonValue,
-        guardrail: report as unknown as Prisma.InputJsonValue,
-        finishedAt: new Date(),
-      },
-    });
+    await finishAgentRun(runId, result, { status, summary, guardrail: report });
     await prisma.auditLog.create({
       data: {
         actorId: actor.id,
         action: submitted ? "AGENT_HANDOVER_RUN" : "AGENT_HANDOVER_FAILED",
         entityType: "AgentRun",
-        entityId: run.id,
+        entityId: runId,
         metadata: { userId: actor.id },
       },
     });
+
     return {
-      runId: run.id,
+      runId,
       status,
-      outcome: loop.outcome,
+      outcome: result.outcome,
       degraded: !submitted,
       summary,
       guardrail: report,
@@ -206,24 +176,18 @@ export async function runHandoverAgent(
         status: row.status,
       })),
       model: settings.model,
-      servedModel,
-      fallbackUsed: loop.fallbackUsed,
+      servedModel: result.servedModels.at(-1) ?? null,
+      fallbackUsed: result.fallbackUsed,
       promptVersion,
       promptHash: promptHash(promptVersion),
-      steps: loop.steps,
-      durationMs: loop.durationMs,
-      usage: loop.usage,
-      ...(loop.error ? { error: { kind: loop.error.kind, message: loop.error.message } } : {}),
-      internal: { submission, ledger: context.ledger, criticalFindings, loop },
+      steps: result.steps,
+      durationMs: result.durationMs,
+      usage: result.usage,
+      ...(result.error ? { error: { kind: result.error.kind, message: result.error.message } } : {}),
+      internal: { submission, ledger: context.ledger, criticalFindings, run: result },
     };
   } catch (error) {
-    // Never leave a run stuck in RUNNING: record the failure, then surface the error.
-    await prisma.agentRun
-      .update({
-        where: { id: run.id },
-        data: { status: "FAILED", outcome: "HARNESS_ERROR", errorKind: "harness", finishedAt: new Date() },
-      })
-      .catch(() => undefined);
+    await failAgentRun(runId);
     throw error;
   }
 }

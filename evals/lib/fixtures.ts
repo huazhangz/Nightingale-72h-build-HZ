@@ -3,7 +3,7 @@ import { syncLocalRiskHighlights } from "../../src/lib/care-note/keyword-highlig
 import { prisma } from "../../src/lib/db";
 import { redactPhi } from "../../src/lib/security/redact";
 import type { Severity } from "../../src/lib/agent/handover/schema";
-import { normalizeForMatch } from "../../src/lib/agent/handover/text";
+import { normalizeForMatch } from "../../src/lib/agent/shared/text";
 import type { EvalCase, NoteSpec } from "../cases/types";
 import { deriveExpectationsFromFeedback, type FeedbackRow } from "./feedback";
 

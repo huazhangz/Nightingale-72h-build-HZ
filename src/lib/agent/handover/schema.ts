@@ -1,4 +1,7 @@
 import { z } from "zod";
+import type { CitationRejection, VerifiedCitation } from "../shared/citations";
+
+export type { VerifiedCitation } from "../shared/citations";
 
 /** Output contract of the handover agent: what the terminal tool accepts and what clinicians see. */
 
@@ -44,14 +47,6 @@ export const HandoverSubmission = z.object({
 export type HandoverSubmission = z.infer<typeof HandoverSubmission>;
 export type SummaryItemInput = z.infer<typeof SummaryItemInput>;
 
-/** A citation that passed verification, enriched for display. */
-export type VerifiedCitation = {
-  noteId: string;
-  quote: string;
-  title: string;
-  encounterAt: string;
-};
-
 export type ItemFlag = "SEVERITY_UPGRADED" | "PHI_REDACTED";
 
 export type SummaryItem = {
@@ -67,14 +62,7 @@ export type SummaryItem = {
   modelSeverity?: Severity;
 };
 
-export type RejectionReason =
-  | "UNCITED"
-  | "UNKNOWN_NOTE"
-  | "UNREAD_NOTE"
-  | "UNGROUNDED_QUOTE"
-  | "QUOTE_TOO_SHORT"
-  | "NEGATION_CONFLICT"
-  | "INSTRUCTION_TEXT";
+export type RejectionReason = CitationRejection;
 
 export type GuardrailReport = {
   modelItemCount: number;

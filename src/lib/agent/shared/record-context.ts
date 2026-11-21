@@ -2,13 +2,11 @@ import type { Actor } from "../../auth/rbac";
 import type { GlanceTopCard } from "../../cache/glanceCache";
 import { getGlanceCard } from "../../care-note/glance";
 import { getPatientTimeline } from "../../care-note/timeline";
-import type { FollowupProposalDraft } from "./schema";
-
 /**
- * Everything one handover run may see. It is bound to a single actor and a single patient: tools
- * read through it and never receive a patient id from the model, so a prompt-injected note cannot
- * steer the agent to another record. All reads go through the existing RBAC-checked accessors and
- * inherit the actor's permissions (delegation, not a service account).
+ * Everything one agent run may see. It is bound to a single actor and a single patient: tools read
+ * through it and never receive a patient id from the model, so a prompt-injected note cannot steer
+ * the agent to another record. All reads go through the existing RBAC-checked accessors and inherit
+ * the actor's permissions (a person for on-demand runs, the clinic's service account for automatic ones).
  */
 
 type TimelineEntry = Awaited<ReturnType<typeof getPatientTimeline>>[number];
@@ -52,12 +50,11 @@ export class EvidenceLedger {
   }
 }
 
-export type HandoverContext = {
+export type RecordContext = {
   actor: Actor;
   patientId: string;
   now: Date;
   ledger: EvidenceLedger;
-  proposals: FollowupProposalDraft[];
   timeline(): Promise<ClinicalTimelineEntry[]>;
   glance(): Promise<GlanceTopCard>;
 };
@@ -70,13 +67,12 @@ function memo<T>(load: () => Promise<T>): () => Promise<T> {
   };
 }
 
-export function createHandoverContext(actor: Actor, patientId: string, now: Date = new Date()): HandoverContext {
+export function createRecordContext(actor: Actor, patientId: string, now: Date = new Date()): RecordContext {
   return {
     actor,
     patientId,
     now,
     ledger: new EvidenceLedger(),
-    proposals: [],
     // One snapshot per run: every tool call and the guardrails see the same record.
     timeline: memo(async () => (await getPatientTimeline(patientId, actor)).filter(isClinicalEntry)),
     glance: memo(async () => (await getGlanceCard(patientId, actor)).card),

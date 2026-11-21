@@ -7,8 +7,7 @@ import type {
 import { classifyMentionContext } from "../../src/lib/care-note/keyword-highlights";
 import type { SummaryItemInput } from "../../src/lib/agent/handover/schema";
 import { TOOL_NAMES } from "../../src/lib/agent/handover/tools";
-import { assistantMessage, toolUseBlock } from "../../src/lib/agent/runtime/testing";
-import type { ModelClient, ModelRequest } from "../../src/lib/agent/runtime/types";
+import { assistantMessage, toolUseBlock, type MessagesRequest, type Responder } from "../../src/lib/agent/core/testing";
 import type { MaterializedCase } from "./fixtures";
 
 /**
@@ -82,19 +81,19 @@ export function quoteContaining(body: string, term: string): string | null {
   return window.join(" ");
 }
 
-export class NullClient implements ModelClient {
-  readonly provider = "null-baseline";
-  async createMessage(): Promise<BetaMessage> {
-    return assistantMessage([toolUseBlock(TOOL_NAMES.submit, { items: [] })], { model: "null-baseline" });
-  }
+export function nullResponder(): Responder {
+  return () => assistantMessage([toolUseBlock(TOOL_NAMES.submit, { items: [] })], { model: "null-baseline" });
 }
 
-export class OracleClient implements ModelClient {
-  readonly provider = "oracle-baseline";
+export function oracleResponder(materialized: MaterializedCase): Responder {
+  const oracle = new OraclePolicy(materialized);
+  return (request) => oracle.respond(request);
+}
 
+class OraclePolicy {
   constructor(private readonly materialized: MaterializedCase) {}
 
-  async createMessage(request: ModelRequest): Promise<BetaMessage> {
+  respond(request: MessagesRequest): BetaMessage {
     const message = (content: BetaContentBlock[]) => assistantMessage(content, { model: "oracle-baseline" });
     const results = toolResultsByName(request.messages);
     if (!results.has(TOOL_NAMES.timeline)) {

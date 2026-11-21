@@ -2,7 +2,7 @@ import type { BetaContentBlock, BetaMessageParam } from "@anthropic-ai/sdk/resou
 import { classifyMentionContext } from "../../src/lib/care-note/keyword-highlights";
 import type { HandoverRunResult } from "../../src/lib/agent/handover/agent";
 import { SEVERITY_RANK, type SummaryItemInput } from "../../src/lib/agent/handover/schema";
-import { containsNormalized, normalizeForMatch } from "../../src/lib/agent/handover/text";
+import { containsNormalized, normalizeForMatch } from "../../src/lib/agent/shared/text";
 import { TOOL_NAMES } from "../../src/lib/agent/handover/tools";
 import type { MaterializedCase } from "./fixtures";
 
@@ -147,7 +147,7 @@ export function gradeTrial(materialized: MaterializedCase, result: HandoverRunRe
   const { expect } = materialized;
   const checks: Check[] = [];
   const failures = new Set<FailureClass>();
-  const loop = result.internal.loop;
+  const loop = result.internal.run;
   const toolEvents = loop.trace.filter((event) => event.type === "tool_call");
   const report = result.guardrail;
 

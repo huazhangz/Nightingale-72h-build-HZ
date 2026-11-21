@@ -5,15 +5,14 @@ import type {
   BetaToolResultBlockParam,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { findTermMentions } from "../../care-note/keyword-highlights";
-import { assistantMessage, textBlock, toolUseBlock } from "../runtime/testing";
-import { mulberry32 } from "../runtime/random";
-import type { ModelClient, ModelRequest } from "../runtime/types";
+import { assistantMessage, textBlock, toolUseBlock, type MessagesRequest, type Responder } from "../core/testing";
+import { mulberry32 } from "../core/random";
 import type { SummaryItemInput } from "./schema";
 import { TOOL_NAMES } from "./tools";
 
 /**
- * A rule-based policy that drives the real handover tools through the real loop, speaking the
- * Messages API wire format. Two uses:
+ * A rule-based policy that answers Messages API requests, so it drives the real handover tools through
+ * the real SDK Tool Runner (via a scripted fetch). Two uses:
  *
  *  - Offline demo: the UI works without an API key (clearly labelled as simulated).
  *  - Evaluation baseline and harness self-test: with error injection it produces known rates of
@@ -104,8 +103,13 @@ function capitalise(text: string): string {
 
 const FOLLOWUP_PATTERN = /\b(follow-up|follow up|labs? for|booked|pending|review in|recheck|repeat)\b/i;
 
-export class SimulatedHandoverClient implements ModelClient {
-  readonly provider = "simulated";
+/** Responder for scriptedFetch(): the simulated policy, seeded per run. */
+export function simulatedResponder(profile: SimulationProfile = CLEAN_PROFILE, model = "simulated-rule-policy"): Responder {
+  const policy = new SimulatedHandoverPolicy(profile, model);
+  return (request) => policy.respond(request);
+}
+
+export class SimulatedHandoverPolicy {
   private readonly random: () => number;
 
   constructor(
@@ -115,10 +119,7 @@ export class SimulatedHandoverClient implements ModelClient {
     this.random = mulberry32(profile.seed);
   }
 
-  async createMessage(request: ModelRequest, options: { signal: AbortSignal }): Promise<BetaMessage> {
-    if (options.signal.aborted) {
-      throw options.signal.reason;
-    }
+  respond(request: MessagesRequest): BetaMessage {
     const results = toolResults(request.messages);
     const done = (name: string) => results.has(name);
     const message = (content: BetaContentBlock[]) =>
