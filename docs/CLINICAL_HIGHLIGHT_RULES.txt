@@ -54,7 +54,9 @@ pastel UI themes to prevent alert fatigue:
   belong to other lexicon mentions, so one trigger covers a coordinated list:
   "denies chest pain, hyperpyrexia, or new allergy" negates all three.
 - Scope terminators end a trigger's reach: but, however, although, though, yet,
-  except, still, which, whereas. "No fever but chest pain" affirms chest pain.
+  except, still, which, whereas, and a comma followed by "and". "No fever but
+  chest pain" affirms chest pain; "fever without hyperpyrexia, and nausea" affirms
+  nausea, while ", or" keeps a negated list going ("denies X, Y, or Z").
 - Negation dominates: "no history of chest pain" is NEGATED, not HISTORICAL.
 - Inflections: "denied" and "deny" are negation triggers alongside "denies".
 - Hypothetical / safety-net demotion (new in v1.1): phrases preceded by "if",

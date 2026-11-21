@@ -44,6 +44,14 @@ describe("spec §2 negation (NegEx)", () => {
     expect(contextOf(body, "chest pain")).toBe("AFFIRMED");
   });
 
+  it("ends negation at a comma followed by 'and' but continues through ', or'", () => {
+    const body = "She describes residual ache, one night of fever without hyperpyrexia, and nausea after tablets.";
+    expect(contextOf(body, "hyperpyrexia")).toBe("NEGATED");
+    expect(contextOf(body, "nausea")).toBe("AFFIRMED");
+    expect(contextOf("He denies chest pain, hyperpyrexia, or new allergy.", "allergy")).toBe("NEGATED");
+    expect(contextOf("No fever and no cough.", "fever")).toBe("NEGATED");
+  });
+
   it("stops at scope terminators and sentence boundaries", () => {
     expect(contextOf("No fever but chest pain since morning.", "chest pain")).toBe("AFFIRMED");
     expect(contextOf("No fever. Chest pain since morning.", "chest pain")).toBe("AFFIRMED");

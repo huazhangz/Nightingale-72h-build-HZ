@@ -4,10 +4,13 @@ import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { invalidateGlanceCache } from "./cache/glanceCache";
 
-/** Windows SQLite URLs must be `file:C:/...` — `file:///C:/...` fails to open. */
+/**
+ * Absolute DATABASE_URL values are honoured (POSIX `file:/...` or Windows `file:D:/...` on any drive;
+ * `file:///C:/...` fails to open on Windows). Relative values fall back to prisma/dev.db.
+ */
 function databaseUrl(): string {
   const fromEnv = process.env.DATABASE_URL;
-  if (fromEnv?.startsWith("file:C:") || fromEnv?.startsWith("file:/")) {
+  if (fromEnv && /^file:(?:\/|[A-Za-z]:)/.test(fromEnv)) {
     return fromEnv;
   }
   const dbPath = path.resolve(process.cwd(), "prisma", "dev.db");

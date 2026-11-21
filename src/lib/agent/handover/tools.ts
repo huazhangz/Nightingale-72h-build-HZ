@@ -3,6 +3,7 @@ import { redactPhi } from "../../security/redact";
 import { defineTool, ToolInputError, type AgentTool } from "../runtime/tools";
 import type { ClinicalTimelineEntry, HandoverContext, LedgerNote } from "./context";
 import { FOLLOWUP_KINDS, HandoverSubmission } from "./schema";
+import { looksLikeInjectedInstruction } from "./injection";
 import { normalizeForMatch } from "./text";
 
 export const TOOL_NAMES = {
@@ -192,14 +193,21 @@ const getNotes = defineTool<HandoverContext, { note_ids: string[] }>({
   },
 });
 
-function tokenSet(text: string): Set<string> {
+export function tokenSet(text: string): Set<string> {
   return new Set(normalizeForMatch(text).split(/[^\p{L}\p{N}]+/u).filter((token) => token.length > 2));
 }
 
-function jaccard(left: Set<string>, right: Set<string>): number {
+/**
+ * Near-duplicate test for task texts: Jaccard >= 0.6, or the shorter text's tokens are (almost)
+ * all contained in the longer one ("Chase TSH result" vs "Chase TSH result and adjust dose").
+ */
+export function isNearDuplicate(left: Set<string>, right: Set<string>): boolean {
   const intersection = [...left].filter((token) => right.has(token)).length;
   const union = new Set([...left, ...right]).size;
-  return union === 0 ? 0 : intersection / union;
+  const smaller = Math.min(left.size, right.size);
+  const jaccard = union === 0 ? 0 : intersection / union;
+  const overlap = smaller === 0 ? 0 : intersection / smaller;
+  return jaccard >= 0.6 || (smaller >= 2 && overlap >= 0.8);
 }
 
 const createFollowup = defineTool<
@@ -226,20 +234,26 @@ const createFollowup = defineTool<
         "source_note_id must be a note returned by get_notes in this session.",
       );
     }
+    if (looksLikeInjectedInstruction(`${input.text} ${input.rationale}`)) {
+      throw new ToolInputError(
+        "INSTRUCTION_TEXT",
+        "Follow-ups must describe a clinical task; text addressed to an AI is never a task.",
+      );
+    }
     if (context.proposals.length >= MAX_PROPOSALS_PER_RUN) {
       throw new ToolInputError("TOO_MANY_PROPOSALS", `At most ${MAX_PROPOSALS_PER_RUN} follow-ups per handover.`);
     }
     const text = redactPhi(input.text.trim());
     const candidate = tokenSet(text);
     const card = await context.glance();
-    const duplicateAction = card.unresolvedActions.find((action) => jaccard(candidate, tokenSet(action.text)) >= 0.6);
+    const duplicateAction = card.unresolvedActions.find((action) => isNearDuplicate(candidate, tokenSet(action.text)));
     if (duplicateAction) {
       return {
         ok: true,
         content: { status: "duplicate", duplicate_of_action_id: duplicateAction.id, message: "Already open." },
       };
     }
-    const duplicateProposal = context.proposals.find((proposal) => jaccard(candidate, tokenSet(proposal.text)) >= 0.6);
+    const duplicateProposal = context.proposals.find((proposal) => isNearDuplicate(candidate, tokenSet(proposal.text)));
     if (duplicateProposal) {
       return { ok: true, content: { status: "duplicate", duplicate_of_proposal: duplicateProposal.ref } };
     }

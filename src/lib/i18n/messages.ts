@@ -193,6 +193,7 @@ export const en = {
   "handover.reason.UNGROUNDED_QUOTE": "quote not found in the note",
   "handover.reason.QUOTE_TOO_SHORT": "quote too short to verify",
   "handover.reason.NEGATION_CONFLICT": "contradicts its own quote (negated finding)",
+  "handover.reason.INSTRUCTION_TEXT": "repeats instructions addressed to an AI",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -381,6 +382,7 @@ export const zh: Record<MessageKey, string> = {
   "handover.reason.UNGROUNDED_QUOTE": "引文在笔记中找不到",
   "handover.reason.QUOTE_TOO_SHORT": "引文过短，无法核实",
   "handover.reason.NEGATION_CONFLICT": "与自身引文矛盾（否定的发现）",
+  "handover.reason.INSTRUCTION_TEXT": "复述了写给 AI 的指令",
 };
 
 export const fi: Record<MessageKey, string> = {
@@ -567,6 +569,7 @@ export const fi: Record<MessageKey, string> = {
   "handover.reason.UNGROUNDED_QUOTE": "lainausta ei löydy muistiinpanosta",
   "handover.reason.QUOTE_TOO_SHORT": "lainaus liian lyhyt todennettavaksi",
   "handover.reason.NEGATION_CONFLICT": "ristiriidassa oman lainauksensa kanssa (kielletty löydös)",
+  "handover.reason.INSTRUCTION_TEXT": "toistaa tekoälylle osoitettuja ohjeita",
 };
 
 export const de: Record<MessageKey, string> = {
@@ -753,6 +756,7 @@ export const de: Record<MessageKey, string> = {
   "handover.reason.UNGROUNDED_QUOTE": "Zitat nicht in der Notiz gefunden",
   "handover.reason.QUOTE_TOO_SHORT": "Zitat zu kurz zur Überprüfung",
   "handover.reason.NEGATION_CONFLICT": "widerspricht dem eigenen Zitat (verneinter Befund)",
+  "handover.reason.INSTRUCTION_TEXT": "wiederholt an eine KI gerichtete Anweisungen",
 };
 
 export const fr: Record<MessageKey, string> = {
@@ -939,6 +943,7 @@ export const fr: Record<MessageKey, string> = {
   "handover.reason.UNGROUNDED_QUOTE": "citation introuvable dans la note",
   "handover.reason.QUOTE_TOO_SHORT": "citation trop courte pour être vérifiée",
   "handover.reason.NEGATION_CONFLICT": "contredit sa propre citation (constat nié)",
+  "handover.reason.INSTRUCTION_TEXT": "reprend des instructions adressées à une IA",
 };
 
 export const dictionaries: Record<Locale, Record<MessageKey, string>> = {

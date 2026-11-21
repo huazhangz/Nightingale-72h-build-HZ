@@ -17,3 +17,6 @@ node_modules/.vite/
 .DS_Store
 Thumbs.db
 
+
+# evaluation outputs (curated reports are copied to docs/eval/)
+evals/results/

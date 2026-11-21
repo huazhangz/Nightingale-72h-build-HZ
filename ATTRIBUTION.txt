@@ -71,6 +71,22 @@ TypeScript
   Website:     https://github.com/DefinitelyTyped/DefinitelyTyped
   Repository:  https://github.com/DefinitelyTyped/DefinitelyTyped
 
+Anthropic TypeScript SDK
+  Package:     @anthropic-ai/sdk 1.12.0
+  License:     Apache-2.0
+  Copyright:   Anthropic, PBC
+  Website:     https://docs.anthropic.com/
+  Repository:  https://github.com/anthropics/anthropic-sdk-typescript
+  Use:         Messages API client for the AI handover agent
+
+Zod
+  Package:     zod 4.6.7
+  License:     MIT
+  Copyright:   Colin McDonnell and contributors
+  Website:     https://zod.dev/
+  Repository:  https://github.com/colinhacks/zod
+  Use:         Agent tool input schemas and output validation
+
 -------------------------------------------------------------------------------
 2. ICONS & STYLING
 -------------------------------------------------------------------------------

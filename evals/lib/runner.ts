@@ -1,0 +1,317 @@
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { runHandoverAgent, type HandoverRunResult } from "../../src/lib/agent/handover/agent";
+import { promptHash, type PromptVersion } from "../../src/lib/agent/handover/prompts";
+import { SimulatedHandoverClient, type SimulationProfile } from "../../src/lib/agent/handover/simulated-client";
+import { AnthropicModelClient } from "../../src/lib/agent/runtime/anthropic-client";
+import { hashSeed } from "../../src/lib/agent/runtime/random";
+import { INFRASTRUCTURE_OUTCOMES, type Effort, type LoopOutcome, type ModelClient, type UsageTotals } from "../../src/lib/agent/runtime/types";
+import { clearGlanceCache } from "../../src/lib/cache/glanceCache";
+import { caseSetHash, type EvalCase } from "../cases";
+import { NullClient, OracleClient } from "./baselines";
+import { destroyCase, materializeCase, type MaterializedCase } from "./fixtures";
+import { GRADER_VERSION, gradeTrial, type Check, type FailureClass, type TrialMetrics } from "./graders";
+import { costUsd } from "./pricing";
+
+export type VariantKind = "anthropic" | "simulated" | "oracle" | "null";
+
+export type Variant = {
+  id: string;
+  kind: VariantKind;
+  model: string;
+  promptVersion: PromptVersion;
+  effort?: Effort;
+  profile?: SimulationProfile;
+};
+
+export type RunConfig = {
+  variants: Variant[];
+  cases: EvalCase[];
+  reps: number;
+  concurrency: number;
+  outDir: string;
+  keepFixtures?: boolean;
+  log?: (line: string) => void;
+};
+
+export type ResultRow = {
+  variant: string;
+  caseId: string;
+  stratum: string;
+  tags: string[];
+  rep: number;
+  outcome: LoopOutcome;
+  passed: boolean;
+  failures: FailureClass[];
+  checks: Check[];
+  metrics: TrialMetrics;
+  usage: UsageTotals;
+  costUsd: number | null;
+  /** Wall clock of the whole run, including tool time and any retry backoff. */
+  wallMs: number;
+  /** Sum of final-attempt model latencies (retries and backoff excluded). */
+  modelLatencyMs: number;
+  modelCalls: number;
+  retries: number;
+  requestedModel: string;
+  servedModel: string | null;
+  fallbackUsed: boolean;
+  promptVersion: string;
+  promptHash: string;
+  startedAt: string;
+};
+
+export type ErrorRow = {
+  variant: string;
+  caseId: string;
+  rep: number;
+  errorClass: string;
+  message: string;
+  startedAt: string;
+};
+
+/** Fixed "today" so prompts are byte-identical across runs (and cacheable). */
+export const EVAL_NOW = new Date("2026-11-21T12:00:00.000Z");
+
+const trialKey = (variant: string, caseId: string, rep: number) => `${variant}|${caseId}|${rep}`;
+
+function readJsonl<T>(file: string): T[] {
+  if (!existsSync(file)) {
+    return [];
+  }
+  return readFileSync(file, "utf8")
+    .split("\n")
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as T);
+}
+
+export function loadResults(outDir: string): { results: ResultRow[]; errors: ErrorRow[]; config: Record<string, unknown> } {
+  return {
+    results: readJsonl<ResultRow>(path.join(outDir, "results.jsonl")),
+    errors: readJsonl<ErrorRow>(path.join(outDir, "errors.jsonl")),
+    config: JSON.parse(readFileSync(path.join(outDir, "config.json"), "utf8")) as Record<string, unknown>,
+  };
+}
+
+function clientFor(variant: Variant, materialized: MaterializedCase, rep: number, shared: { anthropic?: ModelClient }): ModelClient {
+  switch (variant.kind) {
+    case "anthropic":
+      shared.anthropic ??= new AnthropicModelClient({ timeoutMs: 120_000 });
+      return shared.anthropic;
+    case "simulated":
+      return new SimulatedHandoverClient({
+        ...(variant.profile ?? { omitRate: 0, fabricateRate: 0, negationFlipRate: 0, proposeFollowups: true, seed: 1 }),
+        seed: hashSeed(`${variant.id}|${materialized.evalCase.id}|${rep}`),
+      });
+    case "oracle":
+      return new OracleClient(materialized);
+    case "null":
+      return new NullClient();
+  }
+}
+
+async function pool<T>(items: T[], concurrency: number, worker: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, async () => {
+    while (next < items.length) {
+      const item = items[next]!;
+      next += 1;
+      await worker(item);
+    }
+  });
+  await Promise.all(runners);
+}
+
+function rowFrom(
+  variant: Variant,
+  materialized: MaterializedCase,
+  rep: number,
+  result: HandoverRunResult,
+  startedAt: Date,
+): ResultRow {
+  const grade = gradeTrial(materialized, result);
+  const modelCalls = result.internal.loop.trace.filter((event) => event.type === "model_call");
+  return {
+    variant: variant.id,
+    caseId: materialized.evalCase.id,
+    stratum: materialized.evalCase.tags[0] ?? "untagged",
+    tags: materialized.evalCase.tags,
+    rep,
+    outcome: result.outcome,
+    passed: grade.passed,
+    failures: grade.failures,
+    checks: grade.checks,
+    metrics: grade.metrics,
+    usage: result.usage,
+    costUsd: costUsd(result.servedModel ?? variant.model, result.usage),
+    wallMs: result.durationMs,
+    modelLatencyMs: modelCalls.reduce((sum, event) => sum + (event.type === "model_call" ? event.latencyMs : 0), 0),
+    modelCalls: modelCalls.length,
+    retries: result.internal.loop.trace.filter((event) => event.type === "model_retry").length,
+    requestedModel: variant.model,
+    servedModel: result.servedModel,
+    fallbackUsed: result.fallbackUsed,
+    promptVersion: result.promptVersion,
+    promptHash: result.promptHash,
+    startedAt: startedAt.toISOString(),
+  };
+}
+
+/**
+ * Run variants x cases x reps against freshly materialised fixtures. Resumable: completed
+ * (variant, case, rep) rows in results.jsonl are skipped. Infrastructure failures go to errors.jsonl
+ * and are retried on the next invocation; they are never scored as model failures.
+ */
+export async function runEvaluation(config: RunConfig): Promise<{ outDir: string; scored: number; errors: number }> {
+  const log = config.log ?? ((line: string) => console.log(line));
+  mkdirSync(path.join(config.outDir, "transcripts"), { recursive: true });
+  const configFile = path.join(config.outDir, "config.json");
+  const descriptor = {
+    graderVersion: GRADER_VERSION,
+    caseSetHash: caseSetHash(config.cases),
+    caseIds: config.cases.map((item) => item.id),
+    reps: config.reps,
+    evalNow: EVAL_NOW.toISOString(),
+    variants: config.variants.map((variant) => ({ ...variant, promptHash: promptHash(variant.promptVersion) })),
+  };
+  if (existsSync(configFile)) {
+    const previous = JSON.parse(readFileSync(configFile, "utf8")) as typeof descriptor & { createdAt: string };
+    if (previous.graderVersion !== descriptor.graderVersion || previous.caseSetHash !== descriptor.caseSetHash) {
+      throw new Error(
+        `${config.outDir} holds results from another grader/case set (${previous.graderVersion}/${previous.caseSetHash}); ` +
+          "use a new --out directory.",
+      );
+    }
+    const knownVariants = new Map(previous.variants.map((variant) => [variant.id, variant]));
+    for (const variant of descriptor.variants) {
+      const known = knownVariants.get(variant.id);
+      if (known && (known.promptHash !== variant.promptHash || known.model !== variant.model)) {
+        throw new Error(`Variant ${variant.id} changed since the previous run in ${config.outDir}; use a new --out directory.`);
+      }
+      knownVariants.set(variant.id, variant);
+    }
+    writeFileSync(configFile, JSON.stringify({ ...previous, variants: [...knownVariants.values()], reps: Math.max(previous.reps, config.reps) }, null, 2));
+  } else {
+    writeFileSync(configFile, JSON.stringify({ ...descriptor, createdAt: new Date().toISOString() }, null, 2));
+  }
+
+  const resultsFile = path.join(config.outDir, "results.jsonl");
+  const errorsFile = path.join(config.outDir, "errors.jsonl");
+  const done = new Set(readJsonl<ResultRow>(resultsFile).map((row) => trialKey(row.variant, row.caseId, row.rep)));
+
+  const runTag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const materialized = new Map<string, MaterializedCase>();
+  for (const evalCase of config.cases) {
+    materialized.set(evalCase.id, await materializeCase(evalCase, runTag));
+  }
+
+  const trials: Array<{ variant: Variant; materialized: MaterializedCase; rep: number }> = [];
+  for (let rep = 1; rep <= config.reps; rep += 1) {
+    for (const variant of config.variants) {
+      for (const evalCase of config.cases) {
+        if (!done.has(trialKey(variant.id, evalCase.id, rep))) {
+          trials.push({ variant, materialized: materialized.get(evalCase.id)!, rep });
+        }
+      }
+    }
+  }
+
+  const shared: { anthropic?: ModelClient } = {};
+  let finished = 0;
+  let scored = 0;
+  let errors = 0;
+  try {
+    await pool(trials, config.concurrency, async ({ variant, materialized: item, rep }) => {
+      const startedAt = new Date();
+      const prefix = `${variant.id} ${item.evalCase.id} rep${rep}`;
+      let result: HandoverRunResult;
+      try {
+        clearGlanceCache();
+        result = await runHandoverAgent(item.reader, item.patientId, {
+          client: clientFor(variant, item, rep, shared),
+          promptVersion: variant.promptVersion,
+          settings: {
+            model: variant.model,
+            effort: variant.effort ?? "medium",
+            fallbacks: variant.kind === "anthropic" ? "default" : null,
+            deadlineMs: 240_000,
+          },
+          now: EVAL_NOW,
+        });
+      } catch (error) {
+        errors += 1;
+        const row: ErrorRow = {
+          variant: variant.id,
+          caseId: item.evalCase.id,
+          rep,
+          errorClass: "harness_exception",
+          message: error instanceof Error ? error.message : String(error),
+          startedAt: startedAt.toISOString(),
+        };
+        appendFileSync(errorsFile, `${JSON.stringify(row)}\n`);
+        log(`[${++finished}/${trials.length}] ${prefix} ERROR harness_exception: ${row.message}`);
+        return;
+      }
+
+      const servedMismatch =
+        variant.kind === "anthropic" &&
+        !result.fallbackUsed &&
+        result.internal.loop.servedModels.some((served) => served !== variant.model);
+      if (INFRASTRUCTURE_OUTCOMES.has(result.outcome) || servedMismatch) {
+        errors += 1;
+        const row: ErrorRow = {
+          variant: variant.id,
+          caseId: item.evalCase.id,
+          rep,
+          errorClass: servedMismatch ? "served_model_mismatch" : result.outcome,
+          message: servedMismatch
+            ? `served ${result.internal.loop.servedModels.join(",")} for ${variant.model}`
+            : `${result.error?.kind ?? ""} ${result.error?.message ?? ""}`.trim(),
+          startedAt: startedAt.toISOString(),
+        };
+        appendFileSync(errorsFile, `${JSON.stringify(row)}\n`);
+        log(`[${++finished}/${trials.length}] ${prefix} ERROR ${row.errorClass}`);
+        return;
+      }
+
+      const row = rowFrom(variant, item, rep, result, startedAt);
+      appendFileSync(resultsFile, `${JSON.stringify(row)}\n`);
+      const transcriptDir = path.join(config.outDir, "transcripts", variant.id, item.evalCase.id);
+      mkdirSync(transcriptDir, { recursive: true });
+      writeFileSync(
+        path.join(transcriptDir, `rep-${rep}.json`),
+        JSON.stringify(
+          {
+            case: item.evalCase.id,
+            variant: variant.id,
+            rep,
+            expectations: item.expect,
+            outcome: result.outcome,
+            messages: result.internal.loop.messages,
+            trace: result.internal.loop.trace,
+            submission: result.internal.submission,
+            guardrail: result.guardrail,
+            summary: result.summary,
+            proposals: result.proposals,
+            grade: { passed: row.passed, failures: row.failures, checks: row.checks, metrics: row.metrics },
+          },
+          null,
+          2,
+        ),
+      );
+      scored += 1;
+      const cost = row.costUsd === null ? "n/a" : `$${row.costUsd.toFixed(4)}`;
+      log(
+        `[${++finished}/${trials.length}] ${prefix} ${row.passed ? "PASS" : `FAIL ${row.failures.join("+")}`} ` +
+          `${(row.wallMs / 1000).toFixed(1)}s ${cost}`,
+      );
+    });
+  } finally {
+    if (!config.keepFixtures) {
+      for (const item of materialized.values()) {
+        await destroyCase(item.clinicId);
+      }
+    }
+  }
+  return { outDir: config.outDir, scored, errors };
+}

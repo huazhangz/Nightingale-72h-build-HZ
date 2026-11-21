@@ -13,6 +13,7 @@ import {
   type SummaryItem,
   type VerifiedCitation,
 } from "./schema";
+import { looksLikeInjectedInstruction } from "./injection";
 import { containsNormalized, isGroundedQuote, normalizeForMatch, wordCount } from "./text";
 
 /**
@@ -25,7 +26,9 @@ import { containsNormalized, isGroundedQuote, normalizeForMatch, wordCount } fro
  *   3. Critical findings cannot be downgraded: every visible critical-floor highlight must appear as a
  *      critical item — the model's item is raised if it chose a lower severity, and a guardrail item is
  *      injected if the model left it out.
- *   4. Statements are re-redacted before they leave the server.
+ *   4. Statements that carry instruction-like text addressed to an AI (echoed prompt injection) are
+ *      rejected.
+ *   5. Statements are re-redacted before they leave the server.
  */
 
 export const MIN_QUOTE_WORDS = 2;
@@ -165,6 +168,10 @@ export function applyGuardrails(input: {
       report.rejected.push({ index, statement: preview, reason: failures[0] ?? "UNCITED" });
       // Citations of a rejected item are reported once, as the rejection.
       report.droppedCitations = report.droppedCitations.filter((dropped) => dropped.index !== index);
+      return;
+    }
+    if ([item.statement, ...valid.map((citation) => citation.quote)].some(looksLikeInjectedInstruction)) {
+      report.rejected.push({ index, statement: preview, reason: "INSTRUCTION_TEXT" });
       return;
     }
     const conflict = negationConflict(item.statement, valid.map((citation) => citation.quote));

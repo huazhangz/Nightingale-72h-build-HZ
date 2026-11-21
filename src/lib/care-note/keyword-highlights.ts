@@ -126,17 +126,29 @@ function sentenceStart(body: string, offset: number): number {
   return 0;
 }
 
-type Token = { text: string; start: number; end: number; skip: boolean };
+type Token = { text: string; start: number; end: number; skip: boolean; terminator: boolean };
 
 function tokenize(text: string, base: number, skipSpans: Array<[number, number]>): Token[] {
   const tokens: Token[] = [];
   const pattern = /[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*|[/&]/g;
+  let previousEnd = 0;
   for (const match of text.matchAll(pattern)) {
-    const start = base + (match.index ?? 0);
+    const local = match.index ?? 0;
+    const start = base + local;
     const end = start + match[0].length;
     const insideOtherMention = skipSpans.some(([spanStart, spanEnd]) => start >= spanStart && end <= spanEnd);
     const lowered = match[0].toLowerCase();
-    tokens.push({ text: lowered, start, end, skip: insideOtherMention || LIST_CONNECTORS.has(lowered) });
+    // ", and" opens a new positive list item ("fever without hyperpyrexia, and nausea"), whereas
+    // ", or" continues a negated list ("denies chest pain, hyperpyrexia, or new allergy").
+    const commaAnd = lowered === "and" && text.slice(previousEnd, local).includes(",");
+    tokens.push({
+      text: lowered,
+      start,
+      end,
+      skip: insideOtherMention || LIST_CONNECTORS.has(lowered),
+      terminator: SCOPE_TERMINATORS.has(lowered) || commaAnd,
+    });
+    previousEnd = local + match[0].length;
   }
   return tokens;
 }
@@ -168,7 +180,8 @@ function triggerLengthEndingAt(tokens: Token[], index: number, kind: keyof typeo
  *   (i.e. the trigger is one of the five words preceding the phrase, spec §2).
  * - List connectors and words belonging to other lexicon mentions are not counted, so
  *   "denies chest pain, hyperpyrexia, or new allergy" negates "allergy".
- * - A scope terminator ("but", "however", …) ends the search: "no fever but chest pain" affirms.
+ * - A scope terminator ("but", "however", …, or a comma followed by "and") ends the search:
+ *   "no fever but chest pain" and "fever without hyperpyrexia, and nausea" affirm the last phrase.
  * - Negation dominates: "no history of chest pain" is NEGATED, not HISTORICAL.
  */
 export function classifyMentionContext(
@@ -183,7 +196,7 @@ export function classifyMentionContext(
   let demoted: "HISTORICAL" | "HYPOTHETICAL" | null = null;
   for (let index = tokens.length - 1; index >= 0; index -= 1) {
     const token = tokens[index]!;
-    if (SCOPE_TERMINATORS.has(token.text)) {
+    if (token.terminator) {
       break;
     }
     if (counted < CONTEXT_WINDOW_WORDS) {

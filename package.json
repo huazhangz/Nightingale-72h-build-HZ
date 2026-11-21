@@ -15,7 +15,9 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "eval": "tsx --conditions=react-server evals/run.ts",
+    "eval:smoke": "tsx --conditions=react-server evals/run.ts --variants oracle,null,rules,rules-noisy --reps 3 --k 1,3 --out evals/results/smoke --assert-baselines"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

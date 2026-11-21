@@ -39,3 +39,14 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Offline evaluation smoke (grader self-test, no API key)
+        run: npm run eval:smoke
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-smoke-report
+          path: evals/results/smoke/report.md
+          if-no-files-found: ignore

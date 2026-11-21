@@ -10,7 +10,7 @@
 
 Nightingale is a **clinic-scoped EHR intelligence layer** for handover, not a full HIS. It answers three questions in one session: *what is highest risk right now* (Glance), *what happened over time* (Timeline), and *what is still open* (CareAction). Notes are versioned, highlights are offset-addressable, and patients never receive raw narrative or internal commentary.
 
-Clinical “AI” in this build is a **deterministic local phrase engine** plus optional human spans. There is **no outbound LLM** on the highlight path. That keeps P95 glance/timeline work on the local SQLite + in-process cache path and avoids hallucinated risk labels.
+The highlight path is a **deterministic local phrase engine** plus optional human spans, with **no outbound LLM**. The separate, opt-in AI handover agent (AGENT_DESIGN.md) uses an LLM only to draft summaries, and every line it writes is verified against these notes before display. That keeps P95 glance/timeline work on the local SQLite + in-process cache path and avoids hallucinated risk labels.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -66,7 +66,7 @@ The written spec requires:
 - **Negation window:** skip a match if a trigger (`no`, `denies`, `negative for`, `without`, `ruled out`) appears within **1–5 words** before the phrase. Example: “Patient denies chest pain” must not light `chest pain`.
 - **Historical demotion:** `history of` / `past history` / `family history of` drop the span to INFO / LOW.
 
-Judges should treat that file as the **clinical contract**. The current matcher already encodes the **mechanical** half of alert-fatigue control (below); NegEx/history are specified for the same engine so later lexicon expansion stays deterministic rather than prompt-shaped.
+Judges should treat that file as the **clinical contract**. The matcher implements the mechanical alert-fatigue controls (below) and, since v1.1, the NegEx, historical and hypothetical context rules, so "Patient denies chest pain" no longer lights `chest pain`.
 
 ### Deterministic resolution (implemented)
 
@@ -117,7 +117,7 @@ Upsert-on-first-mutate means resolving a derived plan line materializes a row an
 
 ## 4. Security, privacy, and RBAC
 
-**Auth (demo):** `x-user-id` must be a real `User.id`. This is not production SSO.
+**Auth (demo):** login issues an HMAC-signed HttpOnly session cookie; a raw `x-user-id` header is accepted only outside production. This is not production SSO.
 
 **Boundaries:** `assertClinicScope` (clinic mismatch → 403). `assertPatientIsolation` (patients may only address their own id). UI hiding is **not** the control.
 
@@ -173,7 +173,7 @@ Revision History is a **chronological table**: timestamp · editor name and role
 | Default env | **node** — Prisma SQLite integration (`tests/**/*.test.ts`) |
 | UI env | **jsdom** — `tests/test_ui_refresh.test.ts` (Testing Library) |
 | Parallelism | `fileParallelism: false` and `maxWorkers: 1` so one SQLite file is not write-locked by concurrent workers (especially Windows) |
-| Last count | **64 / 64** passing |
+| Last count | **164 / 164** passing |
 
 **npm**
 
@@ -205,4 +205,4 @@ Representative map:
 | UI contracts | `test_ui_refresh` (glance refresh; revision dialog without internal comments) |
 | Seed / i18n | `test_seed_patients`, `test_i18n` |
 
-This brief describes the **shipped** architecture. Demo `x-user-id` auth must be replaced before any live PHI deployment.
+This brief describes the **shipped** architecture. The AI handover agent is documented in [AGENT_DESIGN.md](./AGENT_DESIGN.md) and measured in [EVALUATION.md](./EVALUATION.md). Demo login must be replaced by SSO before any live PHI deployment.

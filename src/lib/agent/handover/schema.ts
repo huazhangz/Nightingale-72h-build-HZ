@@ -73,7 +73,8 @@ export type RejectionReason =
   | "UNREAD_NOTE"
   | "UNGROUNDED_QUOTE"
   | "QUOTE_TOO_SHORT"
-  | "NEGATION_CONFLICT";
+  | "NEGATION_CONFLICT"
+  | "INSTRUCTION_TEXT";
 
 export type GuardrailReport = {
   modelItemCount: number;

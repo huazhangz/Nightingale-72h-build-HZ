@@ -1,6 +1,6 @@
 # Nightingale-72h-build-HZ
 
-**EHR clinical intelligence** for acute handover: a Glance top card, a longitudinal Timeline, versioned care notes, deterministic risk highlighting, and an unresolved-action workflow — with clinic-scoped RBAC and PHI redaction on the server.
+**EHR clinical intelligence** for acute handover: a Glance top card, a longitudinal Timeline, versioned care notes, deterministic risk highlighting, an unresolved-action workflow, and an **AI handover agent** whose every statement quotes its source note — with clinic-scoped RBAC and PHI redaction on the server.
 
 This is a **judge-ready** application manual for the repository. Implementation detail beyond this page lives in [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md). Open-source licenses are listed in [ATTRIBUTION.txt](./ATTRIBUTION.txt).
 
@@ -16,6 +16,8 @@ Nightingale is a Next.js **App Router** app. The browser talks to Route Handlers
 | Styling | Custom CSS (`app/globals.css`) — **not** Tailwind CSS |
 | Icons | Inline SVG — **not** Lucide React |
 | Data | Prisma 6 + SQLite |
+| Agent | Hand-written tool loop on the Anthropic Messages API (`@anthropic-ai/sdk`), zod tool schemas, deterministic guardrails |
+| Evaluation | `evals/`: pass@k / pass^k, case-clustered intervals, paired permutation tests |
 | Tests | Vitest 3 + Testing Library + jsdom |
 | i18n | Five locales (`en`, `zh`, `fi`, `de`, `fr`) |
 
@@ -23,12 +25,12 @@ Primary surfaces:
 
 | Route | Role |
 | --- | --- |
-| `/glance` | Recency score, consultation progress, highest-risk highlights, unresolved / resolved actions |
+| `/glance` | AI handover summary (staff / clinicians), recency score, consultation progress, highest-risk highlights, unresolved / resolved actions |
 | `/timeline` | Same glance card plus encounter list, note details, revision history, inline highlights |
 | `/note-editor` | Create and patch notes (optimistic `baseVersion`, 409 on conflict) |
 | `/search` | Chronological / relevance search over RBAC-filtered notes |
 
-Demo authentication uses the `x-user-id` header. The header **Role** control (`PATIENT` / `STAFF` / `CLINICIAN`) verifies identity, then sets that header for API calls.
+Login (`POST /api/auth/login`) issues an HMAC-signed, HttpOnly session cookie. The header **Role** control (`PATIENT` / `STAFF` / `CLINICIAN`) verifies identity through that login. For the demo and tests, a raw `x-user-id` header is still accepted outside production (`NIGHTINGALE_ALLOW_HEADER_AUTH`); a valid signed session always takes precedence, and production refuses the raw header.
 
 ```
 Browser (CareShell)
@@ -42,8 +44,27 @@ App Router  app/api/*  →  handlers.ts
         ├── Notes         src/lib/care-note/entries.ts, revision.ts
         ├── Glance        src/lib/care-note/glance.ts, CareAction
         ├── Highlights    keyword-highlights.ts, highlights.ts
+        ├── Agent         src/lib/agent/  (loop → tools → guardrails → AgentRun)
         └── Prisma        src/lib/db.ts  →  prisma/dev.db
 ```
+
+---
+
+## AI handover agent
+
+On the Glance page, staff and clinicians can generate a handover summary. An agent reads the record through four tools, writes a summary in which **every line quotes its source note**, may propose follow-up tasks, and submits; deterministic code then checks every quote against the note, enforces "critical findings are never downgraded", and re-redacts the output.
+
+| Piece | Where |
+| --- | --- |
+| Hand-written agent loop (no framework): step limit, token budget, deadline, jittered retries, terminal tool | `src/lib/agent/runtime/` |
+| Tools `get_glance_cards`, `get_timeline`, `get_notes`, `create_followup` (proposal only), `submit_handover_summary` — bound to one actor and patient | `src/lib/agent/handover/tools.ts` |
+| Guardrails: quote verification, negation conflicts, critical floor, injection tripwire, re-redaction | `src/lib/agent/handover/guardrails.ts` |
+| Runs, proposals, API, UI | `AgentRun` / `AgentFollowupProposal`, `app/api/patients/[id]/handover`, `HandoverPanel.tsx` |
+| Evaluation | `evals/`, `npm run eval` |
+
+**Enable it:** set `ANTHROPIC_API_KEY` (default model `claude-opus-5-5`), or set `NIGHTINGALE_AGENT_CLIENT=simulated` to demo the UI with an offline rule policy (clearly labelled, no language model). Without either, the panel explains that the agent is not configured. All settings are listed in [.env.example](./.env.example).
+
+Design and trade-offs: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md).
 
 ---
 
@@ -78,7 +99,13 @@ App Router  app/api/*  →  handlers.ts
    npx vitest run
    ```
 
-   **64 / 64** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **164 / 164** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+
+5. **Agent evaluation** (offline, no API key: grader self-test on oracle / null / rule baselines)
+
+   ```bash
+   npm run eval:smoke
+   ```
 
 ### Environment
 
@@ -108,7 +135,7 @@ Secondary verification for staff/clinician is the same digit string as the emplo
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests in `tests/test_ui_refresh.test.ts` use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 64 / 64 passing (`npx vitest run`).
+**Last verified:** 164 / 164 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -253,7 +280,9 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **64 / 64** passing |
+| `npm run test` or `npx vitest run` | **164 / 164** passing |
+| `npm run typecheck` | 0 errors |
+| `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |
 
 Coverage includes:
 
@@ -271,6 +300,9 @@ Coverage includes:
 
 ## More documentation
 
+- [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md) — handover agent: loop, tools, permission boundary, guardrails, failure modes
+- [docs/EVALUATION.md](./docs/EVALUATION.md) — evaluation method, statistics, baseline results
+- [docs/UPGRADE_PLAN.zh.md](./docs/UPGRADE_PLAN.zh.md) — upgrade plan (Chinese)
 - [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md) — architecture, highlight engine, CareAction, RBAC, trade-offs
 - [docs/CLINICAL_HIGHLIGHT_RULES.txt](./docs/CLINICAL_HIGHLIGHT_RULES.txt) — highlight ontology
 - [ATTRIBUTION.txt](./ATTRIBUTION.txt) — third-party licenses
