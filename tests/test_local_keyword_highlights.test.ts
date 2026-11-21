@@ -59,7 +59,7 @@ describe("local keyword highlights on note write", () => {
     });
   });
 
-  it("creates HIGH and CRITICAL highlights when a note is created", async () => {
+  it("creates HIGH and CRITICAL highlights when a note is created, skipping negated phrases", async () => {
     const entry = await createCareEntry(clinician, {
       patientId: fixture.patient.id,
       title: "ED triage",
@@ -69,7 +69,8 @@ describe("local keyword highlights on note write", () => {
       where: { careEntryId: entry.id },
       orderBy: { startOffset: "asc" },
     });
-    expect(highlights.map((row) => row.label)).toEqual(["CRITICAL", "HIGH", "HIGH"]);
+    // Spec §2: "No allergy documented" is negated and must not be highlighted.
+    expect(highlights.map((row) => row.label)).toEqual(["CRITICAL", "HIGH"]);
     expect(highlights.every((row) => row.source === "MODEL")).toBe(true);
   });
 

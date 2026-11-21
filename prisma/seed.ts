@@ -1,6 +1,6 @@
 import path from "node:path";
 import { ConsultationStage, EntryStatus, PrismaClient, Role } from "@prisma/client";
-import { findLocalRiskPhrases } from "../src/lib/care-note/keyword-highlights";
+import { ENGINE_LABELS, engineConfidence, findLocalRiskPhrases } from "../src/lib/care-note/keyword-highlights";
 import { createProvenancePointer } from "../src/lib/care-note/provenance-utils";
 import { SEEDED_NOTES, wordCount } from "./clinical-notes";
 
@@ -153,7 +153,7 @@ async function writeKeywordHighlights(careEntryId: string, body: string, created
     where: {
       careEntryId,
       source: "MODEL",
-      label: { in: ["HIGH", "CRITICAL", "MEDIUM", "LOW"] },
+      label: { in: [...ENGINE_LABELS] },
     },
   });
   const hits = findLocalRiskPhrases(body);
@@ -169,7 +169,7 @@ async function writeKeywordHighlights(careEntryId: string, body: string, created
       excerpt: hit.excerpt,
       label: hit.label,
       source: "MODEL" as const,
-      confidence: hit.label === "CRITICAL" ? 0.95 : hit.label === "HIGH" ? 0.85 : hit.label === "MEDIUM" ? 0.7 : 0.55,
+      confidence: engineConfidence(hit.label),
       provenancePointer: createProvenancePointer(careEntryId, hit.startOffset, hit.endOffset),
     })),
   });

@@ -91,7 +91,7 @@ describe("role-scoped timeline and glance payloads", () => {
     const [entry] = await getPatientTimeline(fixture.patient.id, staff);
     expect(entry.body).toBeUndefined();
     expect(entry.comments).toHaveLength(1);
-    expect(entry.comments[0]?.body).toMatch(/follow-up CRP/);
+    expect(entry.comments?.[0]?.body).toMatch(/follow-up CRP/);
     expect(entry.highlights).toEqual([]);
     expect(entry.revisions?.some((revision) => revision.isCurrent && revision.version === 1)).toBe(true);
     expect(entry.revisions?.every((revision) => revision.body === undefined)).toBe(true);

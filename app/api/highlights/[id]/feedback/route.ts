@@ -1,4 +1,4 @@
-import { handleHighlightFeedback } from "../../../../src/lib/api/handlers";
+import { handleHighlightFeedback } from "../../../../../src/lib/api/handlers";
 
 export async function POST(
   request: Request,

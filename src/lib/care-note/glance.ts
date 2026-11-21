@@ -7,6 +7,7 @@ import {
   type GlanceAction,
   type GlanceHighlight,
   type GlanceTopCard,
+  type GlanceTransparency,
 } from "../cache/glanceCache";
 import {
   ForbiddenError,
@@ -64,16 +65,63 @@ export async function invalidateGlanceForCareEntry(careEntryId: string): Promise
   }
 }
 
+async function resolveTransparency(
+  patientId: string,
+  latestEntry: {
+    consultationStage: GlanceTransparency["consultationStage"];
+    updatedAt: Date;
+    author: { name: string; role: string };
+  } | null,
+): Promise<GlanceTransparency | undefined> {
+  if (!latestEntry) {
+    return undefined;
+  }
+  const patientRow = await prisma.user.findUniqueOrThrow({ where: { id: patientId } });
+  const assignedClinician = patientRow.clinicId
+    ? await resolveAssignedClinician(patientRow.clinicId)
+    : { name: "Attending clinician", title: "Attending Physician", department: "Internal Medicine" };
+  return {
+    consultationStage: latestEntry.consultationStage,
+    assignedClinician,
+    lastUpdatedBy: { name: latestEntry.author.name, role: latestEntry.author.role },
+    lastUpdatedAt: latestEntry.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Patients only ever receive consultation transparency. Highlights, comments, actions and recency
+ * are never loaded for them, so nothing clinical can leak through a later refactor of the mapping.
+ */
+async function computePatientGlanceCard(patientId: string): Promise<GlanceTopCard> {
+  const latestEntry = await prisma.careEntry.findFirst({
+    where: { patientId },
+    select: {
+      consultationStage: true,
+      updatedAt: true,
+      author: { select: { role: true, name: true } },
+    },
+    orderBy: { encounterAt: "desc" },
+  });
+  return {
+    patientId,
+    highestRiskHighlights: [],
+    unresolvedActions: [],
+    resolvedActions: [],
+    generatedAt: new Date().toISOString(),
+    transparency: await resolveTransparency(patientId, latestEntry),
+  };
+}
+
 export async function computeGlanceCard(patientId: string, actor: Actor): Promise<GlanceTopCard> {
-  const patientView = actor.role === "PATIENT";
+  if (actor.role === "PATIENT") {
+    return computePatientGlanceCard(patientId);
+  }
   const entries = await prisma.careEntry.findMany({
     where: { patientId },
     include: {
       author: { select: { role: true, name: true } },
-      highlights: patientView
-        ? false
-        : { include: { createdBy: { select: { role: true } } } },
-      comments: patientView ? false : true,
+      highlights: { include: { createdBy: { select: { role: true } } } },
+      comments: true,
     },
     orderBy: { encounterAt: "desc" },
   });
@@ -81,77 +129,64 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
   const includeComments = canReadInternalComments(actor.role);
   const includeAiDoctor = canReadAiDoctorContent(actor.role);
 
-  const weights = patientView
-    ? new Map<string, number>()
-    : new Map(
-        (await prisma.featureWeight.findMany()).map((row) => [row.featureKey, row.weight]),
-      );
+  const weights = new Map(
+    (await prisma.featureWeight.findMany()).map((row) => [row.featureKey, row.weight]),
+  );
 
-  const highlights: GlanceHighlight[] = patientView
-    ? []
-    : entries
-        .flatMap((entry) =>
-          entry.highlights
-            .filter((highlight) => {
-              if (
-                !includeAiDoctor &&
-                isAiDoctorHighlight(highlight.source, highlight.createdBy.role)
-              ) {
-                return false;
-              }
-              if (
-                actor.role === "STAFF" &&
-                isUnreleasedClinicianDraft(entry.author.role, entry.status)
-              ) {
-                return false;
-              }
-              return isRiskHighlight(highlight.label, highlight.confidence);
-            })
-            .map((highlight) => ({
-              ...highlight,
-              careEntryId: entry.id,
-              importanceScore: scoreKeywords(highlight.excerpt, weights),
-            })),
-        )
-        .sort(
-          (left, right) =>
-            clinicalFloorRank(right.label) - clinicalFloorRank(left.label) ||
-            right.importanceScore - left.importanceScore ||
-            (right.confidence ?? 0) - (left.confidence ?? 0),
-        )
-        .slice(0, 5)
+  const highlights: GlanceHighlight[] = entries
+    .flatMap((entry) =>
+      entry.highlights
+        .filter((highlight) => {
+          if (!includeAiDoctor && isAiDoctorHighlight(highlight.source, highlight.createdBy.role)) {
+            return false;
+          }
+          if (actor.role === "STAFF" && isUnreleasedClinicianDraft(entry.author.role, entry.status)) {
+            return false;
+          }
+          return isRiskHighlight(highlight.label, highlight.confidence);
+        })
         .map((highlight) => ({
-          id: highlight.id,
-          careEntryId: highlight.careEntryId,
-          excerpt: redactPhi(highlight.excerpt),
-          label: highlight.label,
-          confidence: highlight.confidence,
-          startOffset: highlight.startOffset,
-          endOffset: highlight.endOffset,
-          provenancePointer:
-            highlight.provenancePointer ??
-            createProvenancePointer(highlight.careEntryId, highlight.startOffset, highlight.endOffset),
-          importanceScore: highlight.importanceScore,
-          source: highlight.source,
-          createdByRole: highlight.createdBy.role,
-        }));
+          ...highlight,
+          careEntryId: entry.id,
+          importanceScore: scoreKeywords(highlight.excerpt, weights),
+        })),
+    )
+    .sort(
+      (left, right) =>
+        clinicalFloorRank(right.label) - clinicalFloorRank(left.label) ||
+        right.importanceScore - left.importanceScore ||
+        (right.confidence ?? 0) - (left.confidence ?? 0),
+    )
+    .slice(0, 5)
+    .map((highlight) => ({
+      id: highlight.id,
+      careEntryId: highlight.careEntryId,
+      excerpt: redactPhi(highlight.excerpt),
+      label: highlight.label,
+      confidence: highlight.confidence,
+      startOffset: highlight.startOffset,
+      endOffset: highlight.endOffset,
+      provenancePointer:
+        highlight.provenancePointer ??
+        createProvenancePointer(highlight.careEntryId, highlight.startOffset, highlight.endOffset),
+      importanceScore: highlight.importanceScore,
+      source: highlight.source,
+      createdByRole: highlight.createdBy.role,
+    }));
 
   const unresolvedActions: GlanceAction[] = [];
-  const storedActions = patientView
-    ? []
-    : await prisma.careAction.findMany({
-        where: { patientId },
-        include: { resolvedBy: { select: { name: true } } },
-        orderBy: { updatedAt: "desc" },
-      });
+  const storedActions = await prisma.careAction.findMany({
+    where: { patientId },
+    include: { resolvedBy: { select: { name: true } } },
+    orderBy: { updatedAt: "desc" },
+  });
   const storedBySource = new Map(storedActions.map((row) => [row.sourceKey, row]));
 
-  if (!patientView) {
   for (const entry of entries) {
     const hideClinicianDraft =
       actor.role === "STAFF" && isUnreleasedClinicianDraft(entry.author.role, entry.status);
 
-    if (includeComments && !patientView) {
+    if (includeComments) {
       for (const comment of entry.comments) {
         if (isUnresolvedAction(comment.body, null) && !storedBySource.has(comment.id)) {
           unresolvedActions.push({
@@ -166,12 +201,9 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
       }
     }
 
-    if (!patientView && !hideClinicianDraft) {
+    if (!hideClinicianDraft) {
       for (const highlight of entry.highlights) {
-        if (
-          !includeAiDoctor &&
-          isAiDoctorHighlight(highlight.source, highlight.createdBy.role)
-        ) {
+        if (!includeAiDoctor && isAiDoctorHighlight(highlight.source, highlight.createdBy.role)) {
           continue;
         }
         if (isUnresolvedAction(highlight.excerpt, highlight.label) && !storedBySource.has(highlight.id)) {
@@ -189,7 +221,7 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
       }
     }
 
-    const planSource = hideClinicianDraft || patientView ? entry.body.split(/\n+/)[0] ?? "" : entry.body;
+    const planSource = hideClinicianDraft ? entry.body.split(/\n+/)[0] ?? "" : entry.body;
     for (const line of planSource.split("\n")) {
       if (/^\s*plan:/i.test(line) || /^\s*todo:/i.test(line)) {
         const sourceKey = `${entry.id}:plan`;
@@ -205,7 +237,6 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
         }
       }
     }
-  }
   }
 
   for (const row of storedActions) {
@@ -238,31 +269,6 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
     }));
 
   const latestEntry = entries[0] ?? null;
-  const patientRow = await prisma.user.findUniqueOrThrow({ where: { id: patientId } });
-  const assignedClinician = patientRow.clinicId
-    ? await resolveAssignedClinician(patientRow.clinicId)
-    : { name: "Attending clinician", title: "Attending Physician", department: "Internal Medicine" };
-
-  const transparency = latestEntry
-    ? {
-        consultationStage: latestEntry.consultationStage,
-        assignedClinician,
-        lastUpdatedBy: { name: latestEntry.author.name, role: latestEntry.author.role },
-        lastUpdatedAt: latestEntry.updatedAt.toISOString(),
-      }
-    : undefined;
-
-  if (patientView) {
-    return {
-      patientId,
-      highestRiskHighlights: [],
-      unresolvedActions: [],
-      resolvedActions: [],
-      generatedAt: new Date().toISOString(),
-      transparency,
-    };
-  }
-
   return {
     patientId,
     highestRiskHighlights: highlights,
@@ -270,7 +276,7 @@ export async function computeGlanceCard(patientId: string, actor: Actor): Promis
     resolvedActions,
     recencyScore: recencyScore(latestEntry?.encounterAt ?? null),
     generatedAt: new Date().toISOString(),
-    transparency,
+    transparency: await resolveTransparency(patientId, latestEntry),
   };
 }
 

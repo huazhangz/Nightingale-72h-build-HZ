@@ -1,4 +1,4 @@
-import type { CareEntry, Prisma } from "@prisma/client";
+import type { CareEntry } from "@prisma/client";
 import { prisma } from "../db";
 import { syncLocalRiskHighlights } from "./keyword-highlight-sync";
 import { syncConsultationStage } from "./progress-engine";
@@ -26,9 +26,22 @@ function auditMetadata(userId: string, entryId: string, newVersion: number, targ
   return metadata;
 }
 
+/**
+ * Structural view of the one query nextRevisionVersion needs. Typed structurally so it accepts both
+ * the base Prisma client's transaction handle and the `$extends`-ed client's handle.
+ */
+type RevisionVersionReader = {
+  entryRevision: {
+    findFirst(args: {
+      where: { careEntryId: string };
+      orderBy: { version: "desc" };
+    }): Promise<{ version: number } | null>;
+  };
+};
+
 /** Next unused EntryRevision.version for this note (avoids @@unique([careEntryId, version])). */
 export async function nextRevisionVersion(
-  tx: Prisma.TransactionClient,
+  tx: RevisionVersionReader,
   careEntryId: string,
 ): Promise<number> {
   const latestRevision = await tx.entryRevision.findFirst({

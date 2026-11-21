@@ -1,7 +1,7 @@
 import type { Role } from "@prisma/client";
 import { prisma } from "../db";
 
-const FEATURED_ALIASES = new Set(["张伟", "zhang wei", "zhangwei", "张伟 (zhang wei)"]);
+const FEATURED_ALIASES = new Set(["张伟", "zhang wei", "zhangwei", "张伟 zhang wei"]);
 
 export function normalizeName(value: string): string {
   return value
@@ -11,16 +11,36 @@ export function normalizeName(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+/**
+ * Accepted spellings of a stored name. "张伟 (Zhang Wei)" yields "张伟 (zhang wei)" as typed,
+ * "张伟", and "zhang wei", so bilingual records work without substring matching.
+ */
+export function nameVariants(stored: string): Set<string> {
+  const variants = new Set<string>([normalizeName(stored)]);
+  const bilingual = stored.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  if (bilingual) {
+    variants.add(normalizeName(bilingual[1] ?? ""));
+    variants.add(normalizeName(bilingual[2] ?? ""));
+  }
+  variants.delete("");
+  return variants;
+}
+
+/**
+ * Exact match after normalisation, against the stored name's variants or a curated alias group.
+ * Partial names ("El" for "Elena Rossi") are rejected: identity checks must not be prefix searches.
+ */
 export function namesMatch(stored: string, input: string): boolean {
-  const left = normalizeName(stored);
-  const right = normalizeName(input);
-  if (left === right) {
+  const candidate = normalizeName(input);
+  if (!candidate) {
+    return false;
+  }
+  const variants = nameVariants(stored);
+  if (variants.has(candidate)) {
     return true;
   }
-  if (FEATURED_ALIASES.has(left) && FEATURED_ALIASES.has(right)) {
-    return true;
-  }
-  return left.includes(right) || right.includes(left);
+  const storedIsAlias = [...variants].some((variant) => FEATURED_ALIASES.has(variant));
+  return storedIsAlias && FEATURED_ALIASES.has(candidate);
 }
 
 export function digitsOnly(value: string): string {

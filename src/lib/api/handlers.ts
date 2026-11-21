@@ -1,5 +1,6 @@
 import type { Role } from "@prisma/client";
 import { requireActor, errorResponse } from "../auth/session";
+import { clearedSessionCookie, sessionCookie, signSession } from "../auth/session-token";
 import { assertPatientIsolation } from "../auth/rbac";
 import { verifyPatientLogin, verifyStaffLogin } from "../auth/login";
 import { getGlanceCard } from "../care-note/glance";
@@ -360,7 +361,7 @@ export async function handleLogin(request: Request): Promise<Response> {
       if (!user) {
         return Response.json({ error: "Patient verification failed" }, { status: 401 });
       }
-      return Response.json({ userId: user.id, role: user.role });
+      return loginSuccess(user);
     }
     if (payload.role === "STAFF" || payload.role === "CLINICIAN") {
       const user = await verifyStaffLogin({
@@ -371,10 +372,21 @@ export async function handleLogin(request: Request): Promise<Response> {
       if (!user) {
         return Response.json({ error: "Staff verification failed" }, { status: 401 });
       }
-      return Response.json({ userId: user.id, role: user.role });
+      return loginSuccess(user);
     }
     return Response.json({ error: "Unsupported role" }, { status: 400 });
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function loginSuccess(user: { id: string; role: Role }): Response {
+  return Response.json(
+    { userId: user.id, role: user.role },
+    { headers: { "set-cookie": sessionCookie(signSession(user.id)) } },
+  );
+}
+
+export function handleLogout(): Response {
+  return Response.json({ ok: true }, { headers: { "set-cookie": clearedSessionCookie() } });
 }
