@@ -1,5 +1,7 @@
 import path from "node:path";
-import { ConsultationStage, EntryStatus, PrismaClient, Role } from "@prisma/client";
+import { ConsultationStage, EntryStatus, PrismaClient, Role, UserStatus } from "@prisma/client";
+import { hashPassword } from "../src/lib/auth/password";
+import { DEMO_ENROLLMENT_CODE, DEMO_PASSWORD } from "../src/lib/auth/demo";
 import { ENGINE_LABELS, engineConfidence, findLocalRiskPhrases } from "../src/lib/care-note/keyword-highlights";
 import { createProvenancePointer } from "../src/lib/care-note/provenance-utils";
 import { SEEDED_NOTES, wordCount } from "./clinical-notes";
@@ -8,7 +10,6 @@ const dbPath = path.resolve(process.cwd(), "prisma", "dev.db");
 process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, "/")}`;
 
 const prisma = new PrismaClient();
-const DEV_PASSWORD_HASH = "dev-only-not-a-real-hash";
 
 type PatientSeed = {
   email: string;
@@ -185,10 +186,11 @@ async function main() {
 
   const clinic = await prisma.clinic.upsert({
     where: { slug: "nightingale-demo" },
-    update: { name: "Nightingale Demo Clinic" },
+    update: { name: "Nightingale Demo Clinic", enrollmentCode: DEMO_ENROLLMENT_CODE },
     create: {
       name: "Nightingale Demo Clinic",
       slug: "nightingale-demo",
+      enrollmentCode: DEMO_ENROLLMENT_CODE,
     },
   });
 
@@ -201,7 +203,10 @@ async function main() {
       employeeCode: "00001",
       title: "Registered Nurse",
       department: "Outpatient Nursing",
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
     },
     create: {
       email: "staff@nightingale.test",
@@ -211,7 +216,10 @@ async function main() {
       employeeCode: "00001",
       title: "Registered Nurse",
       department: "Outpatient Nursing",
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
     },
   });
 
@@ -224,7 +232,10 @@ async function main() {
       employeeCode: "00002",
       title: "Attending Physician",
       department: "Internal Medicine",
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
     },
     create: {
       email: "clinician@nightingale.test",
@@ -234,7 +245,10 @@ async function main() {
       employeeCode: "00002",
       title: "Attending Physician",
       department: "Internal Medicine",
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
     },
   });
 
@@ -247,7 +261,10 @@ async function main() {
       employeeCode: "000003",
       title: "Clinic Administrator",
       department: "Operations",
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
     },
     create: {
       email: "admin@nightingale.test",
@@ -257,7 +274,10 @@ async function main() {
       employeeCode: "000003",
       title: "Clinic Administrator",
       department: "Operations",
-      passwordHash: DEV_PASSWORD_HASH,
+      passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
     },
   });
 
@@ -280,7 +300,10 @@ async function main() {
         clinicId: clinic.id,
         phone: patient.phone,
         dateOfBirth: patient.dateOfBirth,
-        passwordHash: DEV_PASSWORD_HASH,
+        passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
       },
       create: {
         email: patient.email,
@@ -289,7 +312,10 @@ async function main() {
         clinicId: clinic.id,
         phone: patient.phone,
         dateOfBirth: patient.dateOfBirth,
-        passwordHash: DEV_PASSWORD_HASH,
+        passwordHash: await hashPassword(DEMO_PASSWORD),
+      status: UserStatus.ACTIVE,
+      failedLoginCount: 0,
+      lockedUntil: null,
       },
     });
     if (index === 0) {
@@ -384,9 +410,19 @@ async function main() {
     },
   });
 
-  console.log("Seeded clinic:", clinic.slug);
+  // Initial risk triage for every patient, rule-based so seeding needs no API key. With a key
+  // configured, the first note edit (or "Reassess") produces an agent assessment.
+  const { drainRiskQueue, enqueueRiskAssessment } = await import("../src/lib/agent/risk/queue");
+  const seededPatients = await prisma.user.findMany({ where: { clinicId: clinic.id, role: Role.PATIENT }, select: { id: true } });
+  for (const patient of seededPatients) {
+    await enqueueRiskAssessment({ patientId: patient.id, clinicId: clinic.id, trigger: "SEED" });
+  }
+  const assessed = await drainRiskQueue({ rulesOnly: true, limit: 100 });
+
+  console.log("Seeded clinic:", clinic.slug, "enrollment code:", DEMO_ENROLLMENT_CODE);
   console.log("Seeded patients:", PATIENTS.length, "featured:", featuredId, PATIENTS[0]?.email);
-  console.log("Staff code 00001 / secret 00001, clinician code 00002 / secret 00002");
+  console.log("Risk assessments (rule-based):", assessed);
+  console.log(`Demo sign-in: clinician@ / staff@ / admin@nightingale.test, password ${DEMO_PASSWORD}`);
 }
 
 main()

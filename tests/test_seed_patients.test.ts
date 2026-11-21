@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "../src/lib/db";
-import { verifyPatientLogin, verifyStaffLogin } from "../src/lib/auth/login";
+import { authenticate } from "../src/lib/auth/accounts";
+import { DEMO_ENROLLMENT_CODE, DEMO_PASSWORD } from "../src/lib/auth/demo";
 import { getPatientTimeline } from "../src/lib/care-note/timeline";
 
 const FEATURED_EMAILS = [
@@ -38,25 +39,23 @@ describe("seeded virtual patients", () => {
       expect(logs).toBeGreaterThan(0);
     }
 
-    const login = await verifyPatientLogin({
-      fullName: "Elena Rossi",
-      phone: "555-010-1001",
-      dateOfBirth: "1984-03-12",
-    });
-    expect(login?.id).toBe(featured?.id);
+    // Demo accounts sign in with email + password (scrypt hashes), never with name/phone/DOB.
+    const login = await authenticate({ email: "elena.rossi@nightingale.test", password: DEMO_PASSWORD, clientKey: "seed-test" });
+    expect(login.id).toBe(featured?.id);
+    const staff = await authenticate({ email: "staff@nightingale.test", password: DEMO_PASSWORD, clientKey: "seed-test" });
+    const clinician = await authenticate({ email: "clinician@nightingale.test", password: DEMO_PASSWORD, clientKey: "seed-test" });
+    expect(staff.role).toBe("STAFF");
+    expect(clinician.role).toBe("CLINICIAN");
+    expect(staff.passwordHash).toMatch(/^scrypt\$/);
 
-    const staff = await verifyStaffLogin({
-      role: "STAFF",
-      employeeCode: "00001",
-      verification: "00001",
+    const clinic = await prisma.clinic.findUniqueOrThrow({ where: { slug: "nightingale-demo" } });
+    expect(clinic.enrollmentCode).toBe(DEMO_ENROLLMENT_CODE);
+    // Every seeded patient starts with a rule-based risk assessment, so the worklist is never blank.
+    const assessed = await prisma.riskAssessment.findMany({
+      where: { patientId: { in: patients.map((patient) => patient.id) }, status: "COMPLETED" },
+      distinct: ["patientId"],
     });
-    const clinician = await verifyStaffLogin({
-      role: "CLINICIAN",
-      employeeCode: "00002",
-      verification: "00002",
-    });
-    expect(staff?.role).toBe("STAFF");
-    expect(clinician?.role).toBe("CLINICIAN");
+    expect(assessed).toHaveLength(10);
 
     const staffUser = await prisma.user.findUniqueOrThrow({
       where: { email: "staff@nightingale.test" },

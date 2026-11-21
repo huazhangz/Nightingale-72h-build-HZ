@@ -20,7 +20,7 @@
     "eval:smoke": "tsx --conditions=react-server evals/run.ts --variants oracle,null,rules,rules-noisy --reps 3 --k 1,3 --out evals/results/smoke --assert-baselines"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx --conditions=react-server prisma/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.12.0",

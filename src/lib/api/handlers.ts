@@ -1,4 +1,3 @@
-import type { Role } from "@prisma/client";
 import { requireActor, errorResponse, HttpError } from "../auth/session";
 import { runHandoverAgent } from "../agent/handover/agent";
 import { AgentNotConfiguredError, agentSettingsFromEnv, isAgentAvailable } from "../agent/handover/config";
@@ -7,9 +6,7 @@ import { decideProposal, latestHandoverRun, publicRunFromResult } from "../agent
 import { agentRunLimiter, SlidingWindowLimiter } from "../agent/rate-limit";
 import { drainRiskQueue, scheduleRiskDrain } from "../agent/risk/queue";
 import { getPatientRisk, listWorklist, overridePatientRisk, requestRiskAssessment } from "../agent/risk/repository";
-import { clearedSessionCookie, sessionCookie, signSession } from "../auth/session-token";
 import { assertPatientIsolation } from "../auth/rbac";
-import { verifyPatientLogin, verifyStaffLogin } from "../auth/login";
 import { getGlanceCard } from "../care-note/glance";
 import { searchPatientEntries } from "../care-note/search";
 import { getPatientTimeline } from "../care-note/timeline";
@@ -19,113 +16,6 @@ import { createPatientAction, patchPatientAction } from "../care-note/actions";
 import { submitHighlightFeedback } from "../learning/importance";
 import { recordEntryViews, releaseFinalSummary } from "../care-note/progress-engine";
 import { prisma } from "../db";
-
-const FEATURED_PATIENT_EMAIL = "elena.rossi@nightingale.test";
-
-const DEMO_STAFF: Array<{
-  email: string;
-  name: string;
-  role: Role;
-  employeeCode: string;
-  title: string;
-  department: string;
-}> = [
-  {
-    email: "staff@nightingale.test",
-    name: "Museil Kamil",
-    role: "STAFF",
-    employeeCode: "00001",
-    title: "Registered Nurse",
-    department: "Outpatient Nursing",
-  },
-  {
-    email: "clinician@nightingale.test",
-    name: "Joe Zhou",
-    role: "CLINICIAN",
-    employeeCode: "00002",
-    title: "Attending Physician",
-    department: "Internal Medicine",
-  },
-  {
-    email: "admin@nightingale.test",
-    name: "Avery Admin",
-    role: "ADMIN",
-    employeeCode: "00003",
-    title: "Clinic Administrator",
-    department: "Operations",
-  },
-];
-
-export async function handleDemoBootstrap(): Promise<Response> {
-  try {
-    const clinic = await prisma.clinic.upsert({
-      where: { slug: "nightingale-demo" },
-      update: { name: "Nightingale Demo Clinic" },
-      create: { name: "Nightingale Demo Clinic", slug: "nightingale-demo" },
-    });
-
-    const users = [];
-    for (const user of DEMO_STAFF) {
-      users.push(
-        await prisma.user.upsert({
-          where: { email: user.email },
-          update: {
-            name: user.name,
-            role: user.role,
-            clinic: { connect: { id: clinic.id } },
-            employeeCode: user.employeeCode,
-            title: user.title,
-            department: user.department,
-          },
-          create: {
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            clinic: { connect: { id: clinic.id } },
-            employeeCode: user.employeeCode,
-            title: user.title,
-            department: user.department,
-            passwordHash: "dev-only-not-a-real-hash",
-          },
-        }),
-      );
-    }
-
-    const patients = await prisma.user.findMany({
-      where: { clinicId: clinic.id, role: "PATIENT" },
-      select: { id: true, name: true, email: true, phone: true, role: true },
-      orderBy: { name: "asc" },
-    });
-    patients.sort((left, right) => {
-      if (left.email === FEATURED_PATIENT_EMAIL) {
-        return -1;
-      }
-      if (right.email === FEATURED_PATIENT_EMAIL) {
-        return 1;
-      }
-      return left.name.localeCompare(right.name);
-    });
-
-    const featured =
-      patients.find((user) => user.email === FEATURED_PATIENT_EMAIL) ?? patients[0] ?? null;
-
-    return Response.json({
-      clinic: { id: clinic.id, name: clinic.name },
-      users: [...users, ...(featured ? [featured] : [])].map((user) => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      })),
-      patients,
-      patientId: featured?.id ?? null,
-      featuredPatientId: featured?.id ?? null,
-      defaultUserId: null,
-    });
-  } catch (error) {
-    return errorResponse(error);
-  }
-}
 
 export async function handlePatientTimeline(request: Request, patientId: string): Promise<Response> {
   try {
@@ -351,55 +241,6 @@ export async function handleReleaseFinalSummary(request: Request, entryId: strin
   } catch (error) {
     return errorResponse(error);
   }
-}
-
-export async function handleLogin(request: Request): Promise<Response> {
-  try {
-    const payload = (await request.json()) as {
-      role?: Role;
-      fullName?: string;
-      phone?: string;
-      dateOfBirth?: string;
-      employeeCode?: string;
-      verification?: string;
-    };
-    if (payload.role === "PATIENT") {
-      const user = await verifyPatientLogin({
-        fullName: payload.fullName ?? "",
-        phone: payload.phone ?? "",
-        dateOfBirth: payload.dateOfBirth ?? "",
-      });
-      if (!user) {
-        return Response.json({ error: "Patient verification failed" }, { status: 401 });
-      }
-      return loginSuccess(user);
-    }
-    if (payload.role === "STAFF" || payload.role === "CLINICIAN") {
-      const user = await verifyStaffLogin({
-        role: payload.role,
-        employeeCode: payload.employeeCode ?? "",
-        verification: payload.verification ?? "",
-      });
-      if (!user) {
-        return Response.json({ error: "Staff verification failed" }, { status: 401 });
-      }
-      return loginSuccess(user);
-    }
-    return Response.json({ error: "Unsupported role" }, { status: 400 });
-  } catch (error) {
-    return errorResponse(error);
-  }
-}
-
-function loginSuccess(user: { id: string; role: Role }): Response {
-  return Response.json(
-    { userId: user.id, role: user.role },
-    { headers: { "set-cookie": sessionCookie(signSession(user.id)) } },
-  );
-}
-
-export function handleLogout(): Response {
-  return Response.json({ ok: true }, { headers: { "set-cookie": clearedSessionCookie() } });
 }
 
 function agentErrorResponse(error: unknown): Response {

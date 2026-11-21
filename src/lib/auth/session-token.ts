@@ -13,6 +13,8 @@ export const SESSION_TTL_SECONDS = 8 * 60 * 60;
 export type SessionPayload = {
   /** User id. */
   sub: string;
+  /** User.sessionVersion at issue time; a bump revokes every older session. */
+  sv: number;
   /** Issued-at and expiry, seconds since epoch. */
   iat: number;
   exp: number;
@@ -41,9 +43,14 @@ function sign(part: string, secret: string): string {
   return base64url(createHmac("sha256", secret).update(part).digest());
 }
 
-export function signSession(userId: string, now: Date = new Date(), ttlSeconds = SESSION_TTL_SECONDS): string {
+export function signSession(
+  userId: string,
+  sessionVersion = 0,
+  now: Date = new Date(),
+  ttlSeconds = SESSION_TTL_SECONDS,
+): string {
   const iat = Math.floor(now.getTime() / 1000);
-  const payload: SessionPayload = { sub: userId, iat, exp: iat + ttlSeconds };
+  const payload: SessionPayload = { sub: userId, sv: sessionVersion, iat, exp: iat + ttlSeconds };
   const part = base64url(JSON.stringify(payload));
   return `${part}.${sign(part, sessionSecret())}`;
 }
@@ -72,6 +79,7 @@ export function verifySession(token: string | null | undefined, now: Date = new 
     !payload ||
     typeof payload !== "object" ||
     typeof (payload as SessionPayload).sub !== "string" ||
+    typeof (payload as SessionPayload).sv !== "number" ||
     typeof (payload as SessionPayload).exp !== "number"
   ) {
     return null;
@@ -106,16 +114,9 @@ export function clearedSessionCookie(): string {
 }
 
 /**
- * Raw `x-user-id` header auth is a demo convenience. It is off in production unless explicitly
- * enabled, and can be switched off in development with NIGHTINGALE_ALLOW_HEADER_AUTH=false.
+ * Raw `x-user-id` header auth exists only for automated tests (vitest sets the flag). It is never
+ * honoured in production, whatever the flag says.
  */
 export function isHeaderAuthAllowed(): boolean {
-  const flag = process.env.NIGHTINGALE_ALLOW_HEADER_AUTH;
-  if (flag === "true") {
-    return true;
-  }
-  if (flag === "false") {
-    return false;
-  }
-  return process.env.NODE_ENV !== "production";
+  return process.env.NODE_ENV !== "production" && process.env.NIGHTINGALE_ALLOW_HEADER_AUTH === "true";
 }

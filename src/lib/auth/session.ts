@@ -27,19 +27,64 @@ function bearerToken(request: Request): string | null {
  * Role and clinic are re-read from the database on every request, so a role change or clinic
  * reassignment takes effect immediately rather than when the token expires.
  */
-export async function requireActor(request: Request): Promise<Actor> {
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * CSRF defence in depth (cookies are already SameSite=Lax): a state-changing request that carries an
+ * Origin (or Referer) must come from this host. Requests without either header come from non-browser
+ * clients, which cannot ride a user's cookie, and are allowed.
+ */
+export function assertSameOrigin(request: Request): void {
+  if (SAFE_METHODS.has(request.method.toUpperCase())) {
+    return;
+  }
+  const source = request.headers.get("origin") ?? request.headers.get("referer");
+  if (!source || source === "null") {
+    if (source === "null") {
+      throw new ForbiddenError("Cross-site request blocked");
+    }
+    return;
+  }
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? new URL(request.url).host;
+  let sourceHost: string;
+  try {
+    sourceHost = new URL(source).host;
+  } catch {
+    throw new ForbiddenError("Cross-site request blocked");
+  }
+  if (sourceHost !== host) {
+    throw new ForbiddenError("Cross-site request blocked");
+  }
+}
+
+/** The signed-in user behind a request, or null. Session version and account status are re-checked. */
+export async function currentUser(request: Request) {
   const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE) ?? bearerToken(request);
   const session = verifySession(token);
-  let userId: string | null = session?.sub ?? null;
-  if (!userId && isHeaderAuthAllowed()) {
-    userId = request.headers.get("x-user-id");
+  let user = session ? await prisma.user.findUnique({ where: { id: session.sub } }) : null;
+  if (user && session && user.sessionVersion !== session.sv) {
+    user = null;
   }
-  if (!userId) {
-    throw new UnauthorizedError();
+  if (!user && !session && isHeaderAuthAllowed()) {
+    const headerId = request.headers.get("x-user-id");
+    user = headerId ? await prisma.user.findUnique({ where: { id: headerId } }) : null;
   }
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || user.isServiceAccount || user.status !== "ACTIVE") {
+    return null;
+  }
+  return user;
+}
+
+/**
+ * Resolve the calling user from a signed session (cookie or Bearer). Role, clinic, status and session
+ * version are re-read from the database on every request, so a role change, a disabled account or a
+ * "sign out everywhere" takes effect immediately. State-changing requests must be same-origin.
+ */
+export async function requireActor(request: Request): Promise<Actor> {
+  assertSameOrigin(request);
+  const user = await currentUser(request);
   if (!user) {
-    throw new UnauthorizedError("Unknown user");
+    throw new UnauthorizedError();
   }
   return { id: user.id, role: user.role, clinicId: user.clinicId };
 }
