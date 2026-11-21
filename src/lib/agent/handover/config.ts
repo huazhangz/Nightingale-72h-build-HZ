@@ -37,11 +37,15 @@ function intFrom(value: string | undefined, fallback: number, min: number, max: 
   return Number.isFinite(parsed) ? Math.min(max, Math.max(min, parsed)) : fallback;
 }
 
+export const SIMULATED_MODEL = "simulated-rule-policy";
+
 export function agentSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): HandoverAgentSettings {
   const effort = env.NIGHTINGALE_AGENT_EFFORT as Effort | undefined;
   const prompt = env.NIGHTINGALE_AGENT_PROMPT;
+  const simulated = env.NIGHTINGALE_AGENT_CLIENT === "simulated";
   return {
-    model: env.NIGHTINGALE_AGENT_MODEL?.trim() || DEFAULT_MODEL,
+    // Record what actually answers: a simulated run must never be logged as a Claude model.
+    model: simulated ? SIMULATED_MODEL : env.NIGHTINGALE_AGENT_MODEL?.trim() || DEFAULT_MODEL,
     effort: effort && EFFORTS.includes(effort) ? effort : "medium",
     maxSteps: intFrom(env.NIGHTINGALE_AGENT_MAX_STEPS, DEFAULT_LOOP_CONFIG.maxSteps, 2, 30),
     maxTokens: intFrom(env.NIGHTINGALE_AGENT_MAX_TOKENS, DEFAULT_LOOP_CONFIG.maxTokens, 1_024, 64_000),
@@ -49,7 +53,7 @@ export function agentSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): Hand
     deadlineMs: intFrom(env.NIGHTINGALE_AGENT_DEADLINE_MS, DEFAULT_LOOP_CONFIG.deadlineMs, 5_000, 900_000),
     promptVersion: isPromptVersion(prompt) ? prompt : DEFAULT_PROMPT_VERSION,
     fallbacks: env.NIGHTINGALE_AGENT_FALLBACKS === "off" ? null : "default",
-    client: env.NIGHTINGALE_AGENT_CLIENT === "simulated" ? "simulated" : "anthropic",
+    client: simulated ? "simulated" : "anthropic",
   };
 }
 
@@ -63,7 +67,7 @@ export function isAgentAvailable(settings: HandoverAgentSettings, env: NodeJS.Pr
 
 export function createModelClient(settings: HandoverAgentSettings, env: NodeJS.ProcessEnv = process.env): ModelClient {
   if (settings.client === "simulated") {
-    return new SimulatedHandoverClient(CLEAN_PROFILE);
+    return new SimulatedHandoverClient(CLEAN_PROFILE, SIMULATED_MODEL);
   }
   if (!hasAnthropicCredentials(env)) {
     throw new AgentNotConfiguredError();

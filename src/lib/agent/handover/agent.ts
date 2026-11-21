@@ -127,93 +127,103 @@ export async function runHandoverAgent(
     hooks: options.hooks,
   });
 
-  const criticalFindings = criticalFindingsFor(await context.timeline());
-  const submitted = loop.outcome === "SUBMITTED";
-  const submission = submitted ? HandoverSubmission.parse(loop.submission) : null;
-  // A failed run still yields the deterministic safety floor, so the reader is never left with nothing.
-  const { items, report } = applyGuardrails({
-    submission: submission ?? { items: [] },
-    ledger: context.ledger,
-    criticalFindings,
-  });
-  const summary: HandoverSummary = { items, generatedAt: new Date().toISOString() };
-  const status = submitted ? "SUCCEEDED" : "FAILED";
+  try {
+    const criticalFindings = criticalFindingsFor(await context.timeline());
+    const submitted = loop.outcome === "SUBMITTED";
+    const submission = submitted ? HandoverSubmission.parse(loop.submission) : null;
+    // A failed run still yields the deterministic safety floor, so the reader is never left with nothing.
+    const { items, report } = applyGuardrails({
+      submission: submission ?? { items: [] },
+      ledger: context.ledger,
+      criticalFindings,
+    });
+    const summary: HandoverSummary = { items, generatedAt: new Date().toISOString() };
+    const status = submitted ? "SUCCEEDED" : "FAILED";
 
-  // Proposals from an incomplete run are not trustworthy enough to show; only persist on success.
-  const proposals = submitted
-    ? await prisma.$transaction(
-        context.proposals.map((proposal) =>
-          prisma.agentFollowupProposal.create({
-            data: {
-              runId: run.id,
-              patientId,
-              ref: proposal.ref,
-              sourceNoteId: proposal.sourceNoteId,
-              kind: proposal.kind,
-              text: proposal.text,
-              rationale: proposal.rationale,
-            },
-          }),
-        ),
-      )
-    : [];
+    // Proposals from an incomplete run are not trustworthy enough to show; only persist on success.
+    const proposals = submitted
+      ? await prisma.$transaction(
+          context.proposals.map((proposal) =>
+            prisma.agentFollowupProposal.create({
+              data: {
+                runId: run.id,
+                patientId,
+                ref: proposal.ref,
+                sourceNoteId: proposal.sourceNoteId,
+                kind: proposal.kind,
+                text: proposal.text,
+                rationale: proposal.rationale,
+              },
+            }),
+          ),
+        )
+      : [];
 
-  const servedModel = loop.servedModels.at(-1) ?? null;
-  await prisma.agentRun.update({
-    where: { id: run.id },
-    data: {
+    const servedModel = loop.servedModels.at(-1) ?? null;
+    await prisma.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status,
+        outcome: loop.outcome,
+        errorKind: loop.error?.kind ?? null,
+        servedModel,
+        fallbackUsed: loop.fallbackUsed,
+        steps: loop.steps,
+        inputTokens: loop.usage.inputTokens,
+        outputTokens: loop.usage.outputTokens,
+        cacheReadTokens: loop.usage.cacheReadInputTokens,
+        cacheWriteTokens: loop.usage.cacheCreationInputTokens,
+        durationMs: loop.durationMs,
+        trace: loop.trace as unknown as Prisma.InputJsonValue,
+        summary: summary as unknown as Prisma.InputJsonValue,
+        guardrail: report as unknown as Prisma.InputJsonValue,
+        finishedAt: new Date(),
+      },
+    });
+    await prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: submitted ? "AGENT_HANDOVER_RUN" : "AGENT_HANDOVER_FAILED",
+        entityType: "AgentRun",
+        entityId: run.id,
+        metadata: { userId: actor.id },
+      },
+    });
+    return {
+      runId: run.id,
       status,
       outcome: loop.outcome,
-      errorKind: loop.error?.kind ?? null,
+      degraded: !submitted,
+      summary,
+      guardrail: report,
+      proposals: proposals.map((row) => ({
+        id: row.id,
+        ref: row.ref,
+        text: row.text,
+        kind: row.kind,
+        sourceNoteId: row.sourceNoteId,
+        rationale: row.rationale,
+        status: row.status,
+      })),
+      model: settings.model,
       servedModel,
       fallbackUsed: loop.fallbackUsed,
+      promptVersion,
+      promptHash: promptHash(promptVersion),
       steps: loop.steps,
-      inputTokens: loop.usage.inputTokens,
-      outputTokens: loop.usage.outputTokens,
-      cacheReadTokens: loop.usage.cacheReadInputTokens,
-      cacheWriteTokens: loop.usage.cacheCreationInputTokens,
       durationMs: loop.durationMs,
-      trace: loop.trace as unknown as Prisma.InputJsonValue,
-      summary: summary as unknown as Prisma.InputJsonValue,
-      guardrail: report as unknown as Prisma.InputJsonValue,
-      finishedAt: new Date(),
-    },
-  });
-  await prisma.auditLog.create({
-    data: {
-      actorId: actor.id,
-      action: submitted ? "AGENT_HANDOVER_RUN" : "AGENT_HANDOVER_FAILED",
-      entityType: "AgentRun",
-      entityId: run.id,
-      metadata: { userId: actor.id },
-    },
-  });
-
-  return {
-    runId: run.id,
-    status,
-    outcome: loop.outcome,
-    degraded: !submitted,
-    summary,
-    guardrail: report,
-    proposals: proposals.map((row) => ({
-      id: row.id,
-      ref: row.ref,
-      text: row.text,
-      kind: row.kind,
-      sourceNoteId: row.sourceNoteId,
-      rationale: row.rationale,
-      status: row.status,
-    })),
-    model: settings.model,
-    servedModel,
-    fallbackUsed: loop.fallbackUsed,
-    promptVersion,
-    promptHash: promptHash(promptVersion),
-    steps: loop.steps,
-    durationMs: loop.durationMs,
-    usage: loop.usage,
-    ...(loop.error ? { error: { kind: loop.error.kind, message: loop.error.message } } : {}),
-    internal: { submission, ledger: context.ledger, criticalFindings, loop },
-  };
+      usage: loop.usage,
+      ...(loop.error ? { error: { kind: loop.error.kind, message: loop.error.message } } : {}),
+      internal: { submission, ledger: context.ledger, criticalFindings, loop },
+    };
+  } catch (error) {
+    // Never leave a run stuck in RUNNING: record the failure, then surface the error.
+    await prisma.agentRun
+      .update({
+        where: { id: run.id },
+        data: { status: "FAILED", outcome: "HARNESS_ERROR", errorKind: "harness", finishedAt: new Date() },
+      })
+      .catch(() => undefined);
+    throw error;
+  }
 }

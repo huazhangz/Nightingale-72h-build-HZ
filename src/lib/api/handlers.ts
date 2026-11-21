@@ -410,7 +410,7 @@ export async function handleAgentStatus(request: Request): Promise<Response> {
     return Response.json({
       available: isAgentAvailable(settings),
       client: settings.client,
-      model: settings.client === "simulated" ? "simulated-rule-policy" : settings.model,
+      model: settings.model,
       promptVersion: settings.promptVersion,
     });
   } catch (error) {
@@ -425,6 +425,10 @@ export async function handleRunHandover(request: Request, patientId: string): Pr
     const payload = (await request.json().catch(() => ({}))) as { promptVersion?: unknown };
     if (payload.promptVersion !== undefined && !isPromptVersion(payload.promptVersion)) {
       throw new HttpError(400, "INVALID_PROMPT_VERSION", "Unknown promptVersion");
+    }
+    // Check configuration before consuming a rate-limit slot.
+    if (!isAgentAvailable(agentSettingsFromEnv())) {
+      throw new AgentNotConfiguredError();
     }
     const limit = agentRunLimiter.take(actor.id);
     if (!limit.allowed) {
