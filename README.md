@@ -76,6 +76,8 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
+**First live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21, $1.39 in total): risk triage 90.5% exact level with 4.8% under-triage and no severe under-triage, against 57.1% / 38.1% for the rule floor alone (21 author-labelled cases × 3); handover prompt v2 passes 80% of runs and every adversarial case, with zero leakage (20 cases × 3). Claude runs are pending an Anthropic key.
+
 ---
 
 ## Quick start
@@ -109,7 +111,7 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    npx vitest run
    ```
 
-   **192 / 192** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **198 / 198** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
@@ -152,7 +154,7 @@ Patients can self-register at `/register` with clinic code `NIGHTINGALE-DEMO-202
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 192 / 192 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 198 / 198 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -301,7 +303,7 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **192 / 192** passing |
+| `npm run test` or `npx vitest run` | **198 / 198** passing |
 | `npm run typecheck` | 0 errors |
 | `npm run build` | passes |
 | `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |

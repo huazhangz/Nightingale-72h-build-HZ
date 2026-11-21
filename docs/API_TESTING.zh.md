@@ -49,7 +49,10 @@ npm run eval -- --variants gemini-v2 --reps 1 --out evals/results/handover-gemin
 注意：
 - **数据：** 免费层的提示词和回答可能被 Google 用于改进产品。评测数据都是合成数据，可以使用；真实患者数据绝不能经过免费层。
 - **模型：** 默认 `gemini-2.5-flash`，可用 `--gemini-model` 指定。请使用具体的模型 id，不要用 `*-latest` 别名，否则返回的版本号与请求不一致，会被记为 served-model mismatch。
-- **费用：** `evals/lib/pricing.ts` 已收录 `gemini-2.5-flash`（输入 $0.30、输出 $2.50 / 百万 token，输出含思考 token）和 `gemini-2.5-flash-lite`（按较高的一组公开价格 $0.10 / $0.40）。价格来自第三方页面，测试环境访问不到官方定价页；若使用免费层，实际费用更低。
+- **费用：** `evals/lib/pricing.ts` 已收录以下价格。价格来自第三方页面，测试环境访问不到官方定价页；若使用免费层，实际费用更低。
+  - `gemini-2.5-flash`：输入 $0.30、输出 $2.50 / 百万 token，输出含思考 token；
+  - `gemini-3.5-flash-lite`：与 2.5 Flash 同价；
+  - `gemini-2.5-flash-lite`：按较高的一组公开价格 $0.10 / $0.40 计，但该模型已对新用户下线。
 - **结论范围：** 结果描述的是 Gemini 模型，不能当作 Claude 的结果。提示词按 Claude 编写，Gemini 的分数可能偏低。
 - **2026-11-21 的尝试结果：** 用户提供的 key 能列出模型，但全部 11 个模型的 `generateContent` 都返回 `402 RESOURCE_EXHAUSTED: Your prepayment credits are depleted`。该 key 所属的 Google 项目处于预付费计费、余额为 0，因此没有免费额度可用。解决方式（二选一）：
   - 在 AI Studio 为该项目充值；
@@ -58,6 +61,18 @@ npm run eval -- --variants gemini-v2 --reps 1 --out evals/results/handover-gemin
   - 402 被记录为 `MODEL_ERROR`，并带有原始消息；
   - 交班摘要退回为安全规则的降级摘要；
   - 风险评测把它记为基础设施错误，不计分。
+
+### 2026-11-21 实测结果（新 key，方式 B，硬上限 $4.50，实际花费 $1.39）
+
+| 步骤 | 结果 |
+| --- | --- |
+| live-check（`gemini-2.5-flash`） | 两个 Agent 都提交了结果。风险：缺血性静息胸痛被判为 CRITICAL，与金标准一致，规则下限只能给 MEDIUM。交班摘要：通过评分，14 条带引用条目 |
+| 风险评测，21 例 × 3 次 | 2.5 Flash：准确率 90.5%，低估 4.8%，严重低估 0，QWK 0.97，配对比较优于规则（p = 0.031）<br>3.5 Flash-Lite：准确率 76.2%，低估 19.0%；有 2 次把过敏性休克判为 LOW / MEDIUM，由下限拉回 CRITICAL |
+| 交班评测，20 例 × 3 次 × 2 版提示词 | v2 pass@1 80.0%（v1 60.0%），pass^3 70%（v1 40%）；对抗用例 30/30 全部通过；零泄漏 |
+| 评分器 | 发现并修复一个评分器缺陷：否定列表较长时，否定词滑出窗口，被误判为断言。已用转录离线重评，无需重新调用模型 |
+| `gemini-2.5-flash-lite` | 404：对新用户已下线 |
+
+详细数字与解读见 [EVALUATION.md](./EVALUATION.md) Part A §7、Part B §B4b。
 
 ## 1. 离线闸门（免费，必须先全绿）
 

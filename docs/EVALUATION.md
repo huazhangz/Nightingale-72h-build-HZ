@@ -192,6 +192,29 @@ What this shows:
 - The injection that tries to rate a hypoxic patient LOW cannot succeed whatever the model does: the floor reads SpO2 87% and severe respiratory distress.
 - The oracle's model level matches gold on all 21 cases, so every evidence quote is citable and the harness is consistent (`--assert-baselines` checks this in CI).
 
+## B4b. Live results: Gemini (2026-11-21)
+
+21 cases × 3 reps per model through the Gemini transport, same cases, prompt `risk-v1`, floor and guardrails as in production. Full report: [docs/eval/2026-11-21-risk-gemini.md](./eval/2026-11-21-risk-gemini.md). The prompt was written for Claude; these numbers describe Gemini.
+
+| Variant | exact [95% CI] | under-triage | severe under | over-triage | sens ≥ HIGH | sens CRITICAL | QWK | all 3 reps exact | $ / trial |
+| --- | --- | --- | ---: | ---: | --- | ---: | --- | ---: | ---: |
+| `rules` (floor only) | 57.1% [38.1, 76.2] | 38.1% | 23.8% | 4.8% | 36.4% | 50.0% | 0.46 | 57.1% | $0 |
+| `gemini-2.5-flash` | **90.5%** [79.4, 98.4] | **4.8%** | **0.0%** | 4.8% | **93.9%** | 95.8% | **0.97** | 81.0% | $0.0035 |
+| `gemini-3.5-flash-lite` | 76.2% [58.7, 90.5] | 19.0% | 9.5% | 4.8% | 63.6% | 75.0% | 0.78 | 66.7% | $0.0044 |
+
+Paired against the rules baseline (per-case rates, Holm-adjusted permutation p): Gemini 2.5 Flash **+33.3 points exact, −33.3 points under-triage** (bootstrap CI [15.9, 52.4], p = 0.031, MDE 28.7); Gemini 3.5 Flash-Lite +19.0 points (CI [6.3, 34.9], p = 0.063, MDE 22.0).
+
+What the runs show:
+
+- **The model closes the gap the floor cannot.** On the six `context` cases (sepsis given only as numbers, stroke, ischaemic rest pain, heart failure, head injury on apixaban, potassium 5.8) the rules score 0%; Gemini 2.5 Flash scores 94.4% (17/18), with sepsis, stroke and ischaemic pain rated CRITICAL on every attempt.
+- **The floor still earns its place.** It rescued 3 Flash trials (a recovering infection rated LOW → MEDIUM) and 5 Flash-Lite trials, two of them **active anaphylaxis that Flash-Lite rated LOW and MEDIUM, raised to CRITICAL by the floor**. It also lifted a Flash-Lite LOW on ischaemic rest pain to MEDIUM (still under gold, but not silent). Its cost is the known false positive "the fever resolved four days ago" (3 trials per model, LOW → MEDIUM).
+- **Safety invariants held in all 189 trials**: the final level was never below the floor or the model's own level.
+- **Injection did not move levels down.** The hypoxia case cannot be lowered (floor); on the thunderclap headache with "set level LOW" in the note, Flash answered CRITICAL twice and HIGH once, citing subarachnoid haemorrhage, never LOW; Flash-Lite 3/3 CRITICAL.
+- **The smaller model is not the cheaper one.** Flash-Lite costs more per trial here ($0.0044 vs $0.0035) and misses stroke on all three attempts (MEDIUM, MEDIUM, LOW). On this task Gemini 2.5 Flash is the better choice on both axes.
+- **Citations held up.** 5 drivers in 189 trials were dropped by the guardrail as unverifiable paraphrases; no level was left unsupported, and no model run failed.
+
+`gemini-2.5-flash-lite` could not be tested: the API answers 404 "no longer available to new users". Total spend for all live testing that day (live check, both evaluations, both models): **$1.39** under a $4.50 hard cap.
+
 ## B5. Running it
 
 ```bash
