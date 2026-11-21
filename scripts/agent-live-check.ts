@@ -4,6 +4,7 @@
  *   npm run agent:live-check -- --yes                       # one handover run + one risk run on the API
  *   npm run agent:live-check -- --offline                   # same flow with the offline policies (no key)
  *   npm run agent:live-check -- --yes --model claude-sonnet-5-5 --effort low
+ *   npm run agent:live-check -- --yes --provider gemini                     # same agents on Gemini (GEMINI_API_KEY)
  *
  * Each run uses a freshly built evaluation fixture in an isolated SQLite file (prisma/eval.db), goes
  * through the production code path (tools, guardrails, persistence), and prints what an operator
@@ -17,7 +18,8 @@ import { parseArgs } from "node:util";
 
 const { values } = parseArgs({
   options: {
-    model: { type: "string", default: "claude-opus-5-5" },
+    provider: { type: "string", default: "anthropic" },
+    model: { type: "string" },
     effort: { type: "string", default: "medium" },
     "handover-case": { type: "string", default: "seed-elena-bp" },
     "risk-case": { type: "string", default: "crit-ischaemic-pain" },
@@ -29,9 +31,14 @@ const { values } = parseArgs({
 
 const root = process.cwd();
 process.env.DATABASE_URL = `file:${path.resolve(root, values.db!).replace(/\\/g, "/")}`;
-if (values.offline) {
-  process.env.NIGHTINGALE_AGENT_CLIENT = "simulated";
+const provider = values.offline ? "simulated" : values.provider === "gemini" ? "gemini" : "anthropic";
+if (values.provider !== "anthropic" && values.provider !== "gemini") {
+  console.error(`Unknown --provider "${values.provider}" (anthropic | gemini).`);
+  process.exit(2);
 }
+const model = values.model ?? (provider === "gemini" ? "gemini-2.5-flash" : "claude-opus-5-5");
+// The handover agent reads its client from the environment, exactly as the app does.
+process.env.NIGHTINGALE_AGENT_CLIENT = provider;
 
 type Line = [string, string];
 
@@ -43,14 +50,22 @@ function print(title: string, lines: Line[]): void {
 }
 
 async function main(): Promise<number> {
-  const { hasAnthropicCredentials } = await import("../src/lib/agent/handover/config");
+  const { geminiApiKey, hasAnthropicCredentials } = await import("../src/lib/agent/handover/config");
   const { costUsd } = await import("../evals/lib/pricing");
-  if (!values.offline) {
-    if (!hasAnthropicCredentials()) {
-      console.error("No ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) in the environment. Use --offline to check the flow without a key.");
-      return 2;
-    }
-    console.log(`Live check on ${values.model} (effort ${values.effort}): 2 agent runs, typically well under $0.50 in total.`);
+  if (provider === "anthropic" && !hasAnthropicCredentials()) {
+    console.error("No ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) in the environment. Use --offline to check the flow without a key.");
+    return 2;
+  }
+  if (provider === "gemini" && !geminiApiKey()) {
+    console.error("No GEMINI_API_KEY in the environment.");
+    return 2;
+  }
+  if (provider !== "simulated") {
+    console.log(
+      provider === "gemini"
+        ? `Live check on ${model} via the Gemini transport: 2 agent runs (free tier or billed to the key's Google project).`
+        : `Live check on ${model} (effort ${values.effort}): 2 agent runs, typically well under $0.50 in total.`,
+    );
     if (!values.yes) {
       console.error("Re-run with --yes to confirm the spend.");
       return 3;
@@ -77,7 +92,7 @@ async function main(): Promise<number> {
   const { runRiskTrial } = await import("../evals/risk/runner");
   const { prisma } = await import("../src/lib/db");
   const effort = values.effort as import("../src/lib/agent/core/types").Effort;
-  const report: Record<string, unknown> = { model: values.model, effort, offline: values.offline, at: new Date().toISOString() };
+  const report: Record<string, unknown> = { provider, model, effort, at: new Date().toISOString() };
   let ok = true;
 
   // ---------------------------------------------------------------- handover agent
@@ -85,7 +100,7 @@ async function main(): Promise<number> {
   const materialized = await materializeCase(handoverCase!, `live-${Date.now().toString(36)}`);
   try {
     const result = await runHandoverAgent(materialized.reader, materialized.patientId, {
-      settings: { ...(values.offline ? {} : { model: values.model }), effort, deadlineMs: 240_000 },
+      settings: { ...(provider === "simulated" ? {} : { model }), effort, deadlineMs: 240_000 },
       now: EVAL_NOW,
     });
     const grade = gradeTrial(materialized, result);
@@ -95,7 +110,7 @@ async function main(): Promise<number> {
     print(`Handover agent · case ${handoverCase!.id}`, [
       ["outcome", `${result.outcome}${result.error ? ` (${result.error.kind}: ${result.error.message})` : ""}`],
       ["served model", `${result.servedModel ?? "none"}${result.fallbackUsed ? " (server-side fallback)" : ""}`],
-      ["steps / retries", `${result.steps} / ${http}`],
+      ["steps / HTTP errors", `${result.steps} / ${http} (retried when retryable)`],
       ["tokens in/out", `${result.usage.inputTokens} / ${result.usage.outputTokens} (cache read ${result.usage.cacheReadInputTokens}, write ${result.usage.cacheCreationInputTokens})`],
       ["cost", cost === null ? "unknown model price" : `$${cost.toFixed(4)}`],
       ["latency", `${(result.durationMs / 1000).toFixed(1)} s`],
@@ -120,9 +135,12 @@ async function main(): Promise<number> {
 
   // ---------------------------------------------------------------- risk triage agent
   const [riskCase] = selectRiskCases(values["risk-case"]);
-  const variant = values.offline
-    ? { id: "simulated", kind: "simulated" as const, model: "simulated-rule-policy" }
-    : { id: "claude", kind: "anthropic" as const, model: values.model!, effort };
+  const variant =
+    provider === "simulated"
+      ? { id: "simulated", kind: "simulated" as const, model: "simulated-rule-policy" }
+      : provider === "gemini"
+        ? { id: "gemini", kind: "gemini" as const, model }
+        : { id: "claude", kind: "anthropic" as const, model, effort };
   const trial = await runRiskTrial({ variant, item: riskCase!, rep: 0 }, { runTag: `live-${Date.now().toString(36)}` });
   if ("error" in trial) {
     ok = false;

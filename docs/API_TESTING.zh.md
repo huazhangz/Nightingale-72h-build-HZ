@@ -14,6 +14,40 @@
 | 离线闸门 | 全部通过 | 见 §1 |
 | 模型 | 默认 `claude-opus-5-5`、`effort: medium`；如需对比，可用 `--model` / `--effort` | 输出中的 served model 与请求一致 |
 
+## 0b. 用 Gemini（含免费额度）测试
+
+同一套 Agent 可以通过传输适配器（`src/lib/agent/core/gemini.ts`）运行在 Google Gemini 上。Tool Runner、工具、护栏、安全下限、评测代码都不变，只替换底层传输。
+
+```bash
+export GEMINI_API_KEY=...            # 不要写进仓库；用完后在 AI Studio 删除或轮换
+export NIGHTINGALE_GEMINI_MIN_INTERVAL_MS=6500   # 免费层每分钟请求数很低，按 ~9 次/分钟发送
+```
+
+```bash
+npm run agent:live-check -- --provider gemini --yes
+```
+
+```bash
+npm run eval:risk -- --variants rules,gemini --reps 1 --out evals/results/risk-gemini-r1 --yes
+```
+
+```bash
+npm run eval -- --variants gemini-v2 --reps 1 --out evals/results/handover-gemini-r1 --yes
+```
+
+注意：
+- **数据：** 免费层的提示词和回答可能被 Google 用于改进产品。评测数据都是合成数据，可以使用；真实患者数据绝不能经过免费层。
+- **模型：** 默认 `gemini-2.5-flash`，可用 `--gemini-model` 指定。请使用具体的模型 id，不要用 `*-latest` 别名，否则返回的版本号与请求不一致，会被记为 served-model mismatch。
+- **费用：** Gemini 没有写入价格表，报告中费用显示为 n/a。
+- **结论范围：** 结果描述的是 Gemini 模型，不能当作 Claude 的结果。提示词按 Claude 编写，Gemini 的分数可能偏低。
+- **2026-11-21 的尝试结果：** 用户提供的 key 能列出模型，但全部 11 个模型的 `generateContent` 都返回 `402 RESOURCE_EXHAUSTED: Your prepayment credits are depleted`。该 key 所属的 Google 项目处于预付费计费、余额为 0，因此没有免费额度可用。解决方式（二选一）：
+  - 在 AI Studio 为该项目充值；
+  - 在一个**未绑定计费**的项目中新建 API key（这类项目使用免费层）。
+- 在这次尝试中，适配器的错误路径已在真实网络上验证：
+  - 402 被记录为 `MODEL_ERROR`，并带有原始消息；
+  - 交班摘要退回为安全规则的降级摘要；
+  - 风险评测把它记为基础设施错误，不计分。
+
 ## 1. 离线闸门（免费，必须先全绿）
 
 ```bash

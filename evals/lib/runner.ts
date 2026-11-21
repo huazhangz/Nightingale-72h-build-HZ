@@ -1,6 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { runHandoverAgent, type HandoverRunResult } from "../../src/lib/agent/handover/agent";
+import { geminiClientFactory } from "../../src/lib/agent/handover/config";
 import { promptHash, type PromptVersion } from "../../src/lib/agent/handover/prompts";
 import { simulatedResponder, type SimulationProfile } from "../../src/lib/agent/handover/simulated-client";
 import { createAnthropicClient, type ClientFactory } from "../../src/lib/agent/core/client";
@@ -14,7 +15,10 @@ import { destroyCase, materializeCase, type MaterializedCase } from "./fixtures"
 import { GRADER_VERSION, gradeTrial, type Check, type FailureClass, type TrialMetrics } from "./graders";
 import { costUsd } from "./pricing";
 
-export type VariantKind = "anthropic" | "simulated" | "oracle" | "null";
+/** "anthropic" and "gemini" call a live API (gemini through the transport adapter); the rest are offline. */
+export type VariantKind = "anthropic" | "gemini" | "simulated" | "oracle" | "null";
+
+export const LIVE_KINDS: ReadonlySet<VariantKind> = new Set(["anthropic", "gemini"]);
 
 export type Variant = {
   id: string;
@@ -106,6 +110,9 @@ export function loadResults(outDir: string): { results: ResultRow[]; errors: Err
 function clientFactoryFor(variant: Variant, materialized: MaterializedCase, rep: number): ClientFactory {
   if (variant.kind === "anthropic") {
     return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, onResponseStatus });
+  }
+  if (variant.kind === "gemini") {
+    return geminiClientFactory();
   }
   let responder: Responder;
   if (variant.kind === "simulated") {
@@ -268,7 +275,7 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
       }
 
       const servedMismatch =
-        variant.kind === "anthropic" &&
+        LIVE_KINDS.has(variant.kind) &&
         !result.fallbackUsed &&
         result.internal.run.servedModels.some((served) => !servedAsRequested(variant.model, served));
       if (INFRASTRUCTURE_OUTCOMES.has(result.outcome) || servedMismatch) {

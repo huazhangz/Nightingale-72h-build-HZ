@@ -13,6 +13,7 @@ import type { RiskGuardrailReport } from "../../src/lib/agent/risk/schema";
 import { simulatedRiskResponder } from "../../src/lib/agent/risk/simulated";
 import { RISK_TOOL_NAMES } from "../../src/lib/agent/risk/tools";
 import { MAX_NOTES_PER_CALL } from "../../src/lib/agent/shared/record-tools";
+import { geminiClientFactory } from "../../src/lib/agent/handover/config";
 import { prisma } from "../../src/lib/db";
 import type { EvalCase } from "../cases/types";
 import { destroyCase, materializeCase, type MaterializedCase } from "../lib/fixtures";
@@ -20,7 +21,7 @@ import { costUsd } from "../lib/pricing";
 import { EVAL_NOW, servedAsRequested } from "../lib/runner";
 import { riskCaseSetHash, type RiskCase } from "./cases";
 
-export type RiskVariantKind = "rules" | "simulated" | "oracle" | "anthropic";
+export type RiskVariantKind = "rules" | "simulated" | "oracle" | "anthropic" | "gemini";
 
 export type RiskVariant = { id: string; kind: RiskVariantKind; model: string; effort?: Effort };
 
@@ -110,6 +111,9 @@ function clientFactoryFor(variant: RiskVariant, item: RiskCase, materialized: Ma
   if (variant.kind === "anthropic") {
     return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, onResponseStatus });
   }
+  if (variant.kind === "gemini") {
+    return geminiClientFactory();
+  }
   const responder = variant.kind === "oracle" ? riskOracleResponder(item, materialized) : simulatedRiskResponder(variant.model);
   return ({ onResponseStatus }) =>
     createAnthropicClient({ apiKey: "offline", maxRetries: 0, fetch: scriptedFetch(responder).fetch, onResponseStatus });
@@ -160,7 +164,8 @@ export async function runRiskTrial({ variant, item, rep }: Trial, options: { kee
     const clientFactory = clientFactoryFor(variant, item, materialized);
     const done = await runRiskAssessment(assessmentId, {
       ...(clientFactory ? { clientFactory } : { rulesOnly: true }),
-      settings: { model: variant.model, effort: variant.effort ?? "medium" },
+      // Server-side refusal fallback is an Anthropic feature; other transports get none.
+      settings: { model: variant.model, effort: variant.effort ?? "medium", ...(variant.kind === "anthropic" ? {} : { fallbacks: null }) },
       now: EVAL_NOW,
       onRun: (run) => {
         agentRun = run;
@@ -190,7 +195,8 @@ export async function runRiskTrial({ variant, item, rep }: Trial, options: { kee
       // Infrastructure failures are retried on the next invocation, never scored as model errors.
       return fail(run.outcome, run.errorKind ?? "infrastructure failure");
     }
-    if (variant.kind === "anthropic" && run?.servedModel && !run.fallbackUsed && !servedAsRequested(variant.model, run.servedModel)) {
+    const live = variant.kind === "anthropic" || variant.kind === "gemini";
+    if (live && run?.servedModel && !run.fallbackUsed && !servedAsRequested(variant.model, run.servedModel)) {
       return fail("served_model_mismatch", `served ${run.servedModel} for ${variant.model}`);
     }
     const report = done.guardrail as unknown as RiskGuardrailReport;

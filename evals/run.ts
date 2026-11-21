@@ -16,6 +16,7 @@ const { values } = parseArgs({
   options: {
     variants: { type: "string", default: "oracle,null,rules" },
     model: { type: "string", default: "claude-opus-5-5" },
+    "gemini-model": { type: "string", default: "gemini-2.5-flash" },
     effort: { type: "string", default: "medium" },
     reps: { type: "string", default: "3" },
     k: { type: "string", default: "1,3,5" },
@@ -45,7 +46,7 @@ async function main(): Promise<number> {
   const { ALL_CASES, selectCases } = await import("./cases");
   const { loadResults, runEvaluation } = await import("./lib/runner");
   const { writeReport } = await import("./lib/report");
-  const { hasAnthropicCredentials } = await import("../src/lib/agent/handover/config");
+  const { geminiApiKey, hasAnthropicCredentials } = await import("../src/lib/agent/handover/config");
   type Variant = import("./lib/runner").Variant;
 
   const ks = values.k!.split(",").map((value) => Number.parseInt(value, 10)).filter((value) => value > 0);
@@ -75,6 +76,8 @@ async function main(): Promise<number> {
     },
     "claude-v1": { id: "claude-v1", kind: "anthropic", model, promptVersion: "handover-v1", effort },
     "claude-v2": { id: "claude-v2", kind: "anthropic", model, promptVersion: "handover-v2", effort },
+    "gemini-v1": { id: "gemini-v1", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v1" },
+    "gemini-v2": { id: "gemini-v2", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v2" },
   };
   const variants = values.variants!.split(",").map((name) => {
     const preset = presets[name.trim()];
@@ -85,6 +88,22 @@ async function main(): Promise<number> {
   });
   const cases = selectCases(values.cases);
   const paid = variants.filter((variant) => variant.kind === "anthropic");
+  const gemini = variants.filter((variant) => variant.kind === "gemini");
+
+  if (gemini.length > 0) {
+    if (!geminiApiKey()) {
+      console.error("Gemini variants need GEMINI_API_KEY.");
+      return 2;
+    }
+    console.log(
+      `Gemini trials: ${gemini.length * cases.length * reps} on ${values["gemini-model"]} (free tier or billed to the key's Google project; ` +
+        "free-tier prompts may be used by Google, so use synthetic data only).",
+    );
+    if (!values.yes) {
+      console.error("Re-run with --yes to confirm.");
+      return 3;
+    }
+  }
 
   if (paid.length > 0) {
     if (!hasAnthropicCredentials()) {
@@ -119,7 +138,8 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  const concurrency = values.concurrency ? Number.parseInt(values.concurrency, 10) : paid.length > 0 ? 4 : 1;
+  // Gemini free-tier rate limits are low: one trial at a time unless asked otherwise.
+  const concurrency = values.concurrency ? Number.parseInt(values.concurrency, 10) : paid.length > 0 && gemini.length === 0 ? 4 : 1;
   console.log(`Evaluating ${variants.map((variant) => variant.id).join(", ")} on ${cases.length}/${ALL_CASES.length} cases × ${reps} reps → ${outDir}`);
   const summary = await runEvaluation({
     variants,

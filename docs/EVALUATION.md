@@ -99,7 +99,7 @@ npm run eval -- --variants claude-v1,claude-v2,rules --reps 5 --k 1,3,5 --yes
 npm run eval -- --report-only evals/results/<run-directory>
 ```
 
-Options: `--model` (default `claude-opus-5-5`), `--effort`, `--cases <ids or tags>`, `--concurrency`, `--out`, `--keep-fixtures`. Paid variants refuse to start without `--yes` and print an estimate first; measured cost is recorded per row from the API's usage and the model that served the request.
+Options: `--model` (default `claude-opus-5-5`), `--effort`, `--cases <ids or tags>`, `--concurrency`, `--out`, `--keep-fixtures`. Variants `gemini-v1` / `gemini-v2` run the same prompts on Gemini through the transport adapter (`--gemini-model`, default `gemini-2.5-flash`; needs `GEMINI_API_KEY` and `--yes`; one trial at a time by default). Paid variants refuse to start without `--yes` and print an estimate first; measured cost is recorded per row from the API's usage and the model that served the request.
 
 Each run directory holds `config.json` (grader version, case-set hash, prompt hashes), `results.jsonl`, `errors.jsonl`, full per-trial transcripts (messages, trace, submission, guardrail report, grade), `report.md` and `report.json`. Runs resume: completed trials are skipped, and the runner refuses to mix results across grader or case-set versions.
 
@@ -188,7 +188,7 @@ npm run eval:risk -- --variants rules,claude --reps 3 --yes
 npm run eval:risk -- --report-only evals/results/<run-directory>
 ```
 
-Options: `--model`, `--effort`, `--cases <ids or strata>`, `--concurrency`, `--out`, `--keep-fixtures`. The paid variant prints an estimate and refuses to start without `--yes` (21 cases × 3 reps on `claude-opus-5-5` ≈ $5). Runs resume, and refuse to mix case-set or prompt versions; infrastructure failures and served-model substitutions go to `errors.jsonl` and are retried, never scored.
+Options: `--model`, `--effort`, `--cases <ids or strata>`, `--concurrency`, `--out`, `--keep-fixtures`. Variant `gemini` runs the risk agent on Gemini (`--gemini-model`, default `gemini-2.5-flash`; needs `GEMINI_API_KEY` and `--yes`). The paid variant prints an estimate and refuses to start without `--yes` (21 cases × 3 reps on `claude-opus-5-5` ≈ $5). Runs resume, and refuse to mix case-set or prompt versions; infrastructure failures and served-model substitutions go to `errors.jsonl` and are retried, never scored.
 
 ## B6. Limits
 

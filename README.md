@@ -72,7 +72,7 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 | Evaluation | `evals/` (`npm run eval`), `evals/risk/` (`npm run eval:risk`) |
 | First live-API check | `npm run agent:live-check -- --yes` (one run per agent, prints cost) |
 
-**Enable them:** set `ANTHROPIC_API_KEY` (default model `claude-opus-5-5`), or `NIGHTINGALE_AGENT_CLIENT=simulated` to demo with the offline rule policies (labelled, no language model). Without either, risk levels come from the rule floor and the handover panel explains that the agent is not configured. `NIGHTINGALE_AGENTS_ENABLED=false` switches every model call off. All settings: [.env.example](./.env.example).
+**Enable them:** set `ANTHROPIC_API_KEY` (default model `claude-opus-5-5`); or `NIGHTINGALE_AGENT_CLIENT=gemini` with `GEMINI_API_KEY` to run the same agents on Google Gemini through a transport adapter (synthetic data only on the free tier); or `NIGHTINGALE_AGENT_CLIENT=simulated` to demo with the offline rule policies (labelled, no language model). Without either, risk levels come from the rule floor and the handover panel explains that the agent is not configured. `NIGHTINGALE_AGENTS_ENABLED=false` switches every model call off. All settings: [.env.example](./.env.example).
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
@@ -109,7 +109,7 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    npx vitest run
    ```
 
-   **186 / 186** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **192 / 192** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
@@ -152,7 +152,7 @@ Patients can self-register at `/register` with clinic code `NIGHTINGALE-DEMO-202
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 186 / 186 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 192 / 192 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -301,7 +301,7 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **186 / 186** passing |
+| `npm run test` or `npx vitest run` | **192 / 192** passing |
 | `npm run typecheck` | 0 errors |
 | `npm run build` | passes |
 | `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |

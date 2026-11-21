@@ -16,6 +16,7 @@ const { values } = parseArgs({
   options: {
     variants: { type: "string", default: "rules,simulated,oracle" },
     model: { type: "string", default: "claude-opus-5-5" },
+    "gemini-model": { type: "string", default: "gemini-2.5-flash" },
     effort: { type: "string", default: "medium" },
     reps: { type: "string", default: "1" },
     cases: { type: "string" },
@@ -44,7 +45,7 @@ async function main(): Promise<number> {
   const { RISK_CASES, selectRiskCases } = await import("./cases");
   const { loadRiskResults, runRiskEvaluation } = await import("./runner");
   const { writeRiskReport } = await import("./report");
-  const { hasAnthropicCredentials } = await import("../../src/lib/agent/handover/config");
+  const { geminiApiKey, hasAnthropicCredentials } = await import("../../src/lib/agent/handover/config");
   type RiskVariant = import("./runner").RiskVariant;
 
   if (values["report-only"]) {
@@ -62,6 +63,7 @@ async function main(): Promise<number> {
     simulated: { id: "simulated", kind: "simulated", model: "simulated-rule-policy" },
     oracle: { id: "oracle", kind: "oracle", model: "oracle-baseline" },
     claude: { id: "claude", kind: "anthropic", model, effort },
+    gemini: { id: "gemini", kind: "gemini", model: values["gemini-model"]! },
   };
   const variants = values.variants!.split(",").map((name) => {
     const preset = presets[name.trim()];
@@ -73,6 +75,22 @@ async function main(): Promise<number> {
   const cases = selectRiskCases(values.cases);
   const reps = Math.max(1, Number.parseInt(values.reps!, 10));
   const paid = variants.filter((variant) => variant.kind === "anthropic");
+  const gemini = variants.filter((variant) => variant.kind === "gemini");
+
+  if (gemini.length > 0) {
+    if (!geminiApiKey()) {
+      console.error("The gemini variant needs GEMINI_API_KEY.");
+      return 2;
+    }
+    console.log(
+      `Gemini trials: ${gemini.length * cases.length * reps} on ${values["gemini-model"]} (free tier or billed to the key's Google project; ` +
+        "free-tier prompts may be used by Google, so use synthetic data only).",
+    );
+    if (!values.yes) {
+      console.error("Re-run with --yes to confirm.");
+      return 3;
+    }
+  }
 
   if (paid.length > 0) {
     if (!hasAnthropicCredentials()) {
@@ -102,7 +120,8 @@ async function main(): Promise<number> {
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outDir = path.resolve(root, values.out ?? path.join("evals", "results", `risk-${stamp}`));
-  const concurrency = values.concurrency ? Number.parseInt(values.concurrency, 10) : paid.length > 0 ? 4 : 1;
+  // Gemini free-tier rate limits are low: one trial at a time unless asked otherwise.
+  const concurrency = values.concurrency ? Number.parseInt(values.concurrency, 10) : paid.length > 0 && gemini.length === 0 ? 4 : 1;
   console.log(`Risk eval: ${variants.map((variant) => variant.id).join(", ")} on ${cases.length}/${RISK_CASES.length} cases × ${reps} rep(s) → ${outDir}`);
   const outcome = await runRiskEvaluation({ variants, cases, reps, concurrency, outDir, keepFixtures: values["keep-fixtures"] });
   const { rows, errors, config } = loadRiskResults(outDir);

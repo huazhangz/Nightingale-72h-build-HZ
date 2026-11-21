@@ -55,9 +55,24 @@ Why the SDK Tool Runner and not Managed Agents: clinical data must stay on infra
 
 **PHI.** Bodies and excerpts are redacted on write and again on read (`redactPhi`); everything the agents output is re-redacted. The model never receives the patient's name.
 
-### 1.3 Persistence and configuration
+### 1.3 Second provider: Gemini through a transport adapter
 
-`executeAgent` creates an `AgentRun` row (agent, actor, prompt version and content hash, requested model), runs the agent and records outcome, served model, fallback, steps, token usage, duration and the trace. `createClientFactory` picks the client: the real API when `ANTHROPIC_API_KEY` is set, the offline policies when `NIGHTINGALE_AGENT_CLIENT=simulated`, and it refuses when neither is available (`AgentNotConfiguredError`). `NIGHTINGALE_AGENTS_ENABLED=false` switches every model call off; rule-based features keep working.
+`src/lib/agent/core/gemini.ts` is a `fetch` implementation for the Anthropic SDK client that answers Messages API requests by calling Google Gemini `generateContent`. Everything above the transport (Tool Runner, tool validation, budgets, outcomes, guardrails, floors, persistence, evaluations) runs unchanged, so the same harness can compare providers.
+
+| Messages API | Gemini |
+| --- | --- |
+| `system`, `messages` | `systemInstruction`, `contents` (`user` / `model`, adjacent turns merged) |
+| `tool_use` / `tool_result` | `functionCall` / `functionResponse` (names resolved from tool_use ids); thought signatures returned with their calls |
+| `tools[].input_schema` | `functionDeclarations[].parameters`: `$ref` inlined, unsupported keywords dropped |
+| `stop_reason` | function call → `tool_use`; `MAX_TOKENS` → `max_tokens`; safety / blocked → `refusal`; otherwise `end_turn` |
+| `usage` | prompt tokens minus cached → input; candidates + thinking tokens → output; cached → cache reads |
+| HTTP errors | same status, Anthropic error body, Gemini `RetryInfo` → `retry-after` (SDK retries apply) |
+
+Not mapped: prompt caching breakpoints, `effort`, server-side refusal fallback (Anthropic features). Gemini does not enforce strict tool schemas, so malformed tool inputs are caught by the tool layer and returned as `INVALID_INPUT` for the model to correct. Select it with `NIGHTINGALE_AGENT_CLIENT=gemini` and `GEMINI_API_KEY`; `NIGHTINGALE_GEMINI_MIN_INTERVAL_MS` spaces requests for free-tier rate limits. **Free-tier prompts may be used by Google to improve its products: synthetic data only, never patient data.**
+
+### 1.4 Persistence and configuration
+
+`executeAgent` creates an `AgentRun` row (agent, actor, prompt version and content hash, requested model), runs the agent and records outcome, served model, fallback, steps, token usage, duration and the trace. `createClientFactory` picks the client: the Anthropic API when `ANTHROPIC_API_KEY` is set, Gemini when `NIGHTINGALE_AGENT_CLIENT=gemini` and `GEMINI_API_KEY` is set, the offline policies when `NIGHTINGALE_AGENT_CLIENT=simulated`, and it refuses otherwise (`AgentNotConfiguredError`). `NIGHTINGALE_AGENTS_ENABLED=false` switches every model call off; rule-based features keep working.
 
 ---
 
@@ -191,7 +206,8 @@ HandoverPanel (Glance)                                   evals/run.ts
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | — | Enables the live agents |
 | `NIGHTINGALE_AGENTS_ENABLED` | `true` | `false` switches every model call off (rules keep working) |
-| `NIGHTINGALE_AGENT_CLIENT` | `anthropic` | `simulated` runs the offline policies (labelled in the UI) |
+| `NIGHTINGALE_AGENT_CLIENT` | `anthropic` | `gemini` runs the agents on Google Gemini (§1.3); `simulated` runs the offline policies (labelled in the UI) |
+| `GEMINI_API_KEY` / `NIGHTINGALE_GEMINI_MIN_INTERVAL_MS` | — / 0 | Gemini credentials; request spacing for free-tier limits |
 | `NIGHTINGALE_AGENT_MODEL` / `_EFFORT` / `_PROMPT` | `claude-opus-5-5` / `medium` / `handover-v2` | Model configuration (`_PROMPT` applies to the handover agent) |
 | `NIGHTINGALE_AGENT_MAX_STEPS` / `_MAX_TOKENS` / `_TOKEN_BUDGET` / `_DEADLINE_MS` | 12 / 16 000 / 400 000 / 180 000 | Run limits (risk caps iterations at 8) |
 | `NIGHTINGALE_AGENT_FALLBACKS` | `default` | `off` disables server-side refusal fallback |
