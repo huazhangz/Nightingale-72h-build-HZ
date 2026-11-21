@@ -68,7 +68,9 @@ Why the SDK Tool Runner and not Managed Agents: clinical data must stay on infra
 | `usage` | prompt tokens minus cached → input; candidates + thinking tokens → output; cached → cache reads |
 | HTTP errors | same status, Anthropic error body, Gemini `RetryInfo` → `retry-after` (SDK retries apply) |
 
-Not mapped: prompt caching breakpoints, `effort`, server-side refusal fallback (Anthropic features). Gemini does not enforce strict tool schemas, so malformed tool inputs are caught by the tool layer and returned as `INVALID_INPUT` for the model to correct. Select it with `NIGHTINGALE_AGENT_CLIENT=gemini` and `GEMINI_API_KEY`; `NIGHTINGALE_GEMINI_MIN_INTERVAL_MS` spaces requests for free-tier rate limits. **Free-tier prompts may be used by Google to improve its products: synthetic data only, never patient data.**
+Not mapped: prompt caching breakpoints, `effort`, server-side refusal fallback (Anthropic features). Gemini does not enforce strict tool schemas, so malformed tool inputs are caught by the tool layer and returned as `INVALID_INPUT` for the model to correct. Select it with `NIGHTINGALE_AGENT_CLIENT=gemini` and `GEMINI_API_KEY`; `NIGHTINGALE_GEMINI_MIN_INTERVAL_MS` spaces requests for free-tier rate limits.
+
+A second mode, `NIGHTINGALE_GEMINI_API=openai`, sends the same requests to Gemini's OpenAI-compatible endpoint through `src/lib/agent/core/openai-compat.ts` (Chat Completions: tool calls as `tool_calls`, results as `tool` messages, `effort` as `reasoning_effort`, billed output = total − prompt tokens so thinking is counted). That endpoint accepts the key as `Authorization: Bearer`, which is what a credential-injecting network proxy can supply; the native endpoint only takes `x-goog-api-key`. The adapter is generic Chat Completions, so other OpenAI-compatible providers can be added the same way. **Free-tier prompts may be used by Google to improve its products: synthetic data only, never patient data.**
 
 ### 1.4 Persistence and configuration
 

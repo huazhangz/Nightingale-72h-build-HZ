@@ -64,6 +64,7 @@ async function main(): Promise<number> {
     oracle: { id: "oracle", kind: "oracle", model: "oracle-baseline" },
     claude: { id: "claude", kind: "anthropic", model, effort },
     gemini: { id: "gemini", kind: "gemini", model: values["gemini-model"]! },
+    "gemini-lite": { id: "gemini-lite", kind: "gemini", model: "gemini-2.5-flash-lite" },
   };
   const variants = values.variants!.split(",").map((name) => {
     const preset = presets[name.trim()];
@@ -83,7 +84,7 @@ async function main(): Promise<number> {
       return 2;
     }
     console.log(
-      `Gemini trials: ${gemini.length * cases.length * reps} on ${values["gemini-model"]} (free tier or billed to the key's Google project; ` +
+      `Gemini trials: ${gemini.length * cases.length * reps} on ${[...new Set(gemini.map((variant) => variant.model))].join(", ")} (free tier or billed to the key's Google project; ` +
         "free-tier prompts may be used by Google, so use synthetic data only).",
     );
     if (!values.yes) {

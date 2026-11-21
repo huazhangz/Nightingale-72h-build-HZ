@@ -18,6 +18,7 @@ import { prisma } from "../../src/lib/db";
 import type { EvalCase } from "../cases/types";
 import { destroyCase, materializeCase, type MaterializedCase } from "../lib/fixtures";
 import { costUsd } from "../lib/pricing";
+import { capped, spendGuardFromEnv } from "../lib/spend";
 import { EVAL_NOW, servedAsRequested } from "../lib/runner";
 import { riskCaseSetHash, type RiskCase } from "./cases";
 
@@ -109,10 +110,10 @@ function clientFactoryFor(variant: RiskVariant, item: RiskCase, materialized: Ma
     return undefined;
   }
   if (variant.kind === "anthropic") {
-    return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, onResponseStatus });
+    return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, fetch: capped(), onResponseStatus });
   }
   if (variant.kind === "gemini") {
-    return geminiClientFactory();
+    return geminiClientFactory({ wrapFetch: capped });
   }
   const responder = variant.kind === "oracle" ? riskOracleResponder(item, materialized) : simulatedRiskResponder(variant.model);
   return ({ onResponseStatus }) =>
@@ -316,6 +317,13 @@ export async function runRiskEvaluation(config: {
   const workers = Array.from({ length: Math.max(1, Math.min(config.concurrency, trials.length)) }, async () => {
     while (next < trials.length) {
       const trial = trials[next]!;
+      const live = trial.variant.kind === "anthropic" || trial.variant.kind === "gemini";
+      const guard = spendGuardFromEnv();
+      if (live && guard?.exhausted()) {
+        log(`Spend cap reached ($${guard.totalUsd.toFixed(4)}); not starting further live trials.`);
+        next = trials.length;
+        break;
+      }
       next += 1;
       const result = await runRiskTrial(trial, { keepFixtures: config.keepFixtures, runTag });
       const transcriptDir = path.join(config.outDir, "transcripts", trial.variant.id, trial.item.id);

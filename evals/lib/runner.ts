@@ -14,6 +14,7 @@ import { nullResponder, oracleResponder } from "./baselines";
 import { destroyCase, materializeCase, type MaterializedCase } from "./fixtures";
 import { GRADER_VERSION, gradeTrial, type Check, type FailureClass, type TrialMetrics } from "./graders";
 import { costUsd } from "./pricing";
+import { capped, spendGuardFromEnv } from "./spend";
 
 /** "anthropic" and "gemini" call a live API (gemini through the transport adapter); the rest are offline. */
 export type VariantKind = "anthropic" | "gemini" | "simulated" | "oracle" | "null";
@@ -109,10 +110,10 @@ export function loadResults(outDir: string): { results: ResultRow[]; errors: Err
 /** Offline variants drive the real SDK Tool Runner through a scripted fetch; anthropic uses the API. */
 function clientFactoryFor(variant: Variant, materialized: MaterializedCase, rep: number): ClientFactory {
   if (variant.kind === "anthropic") {
-    return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, onResponseStatus });
+    return ({ onResponseStatus }) => createAnthropicClient({ timeoutMs: 120_000, fetch: capped(), onResponseStatus });
   }
   if (variant.kind === "gemini") {
-    return geminiClientFactory();
+    return geminiClientFactory({ wrapFetch: capped });
   }
   let responder: Responder;
   if (variant.kind === "simulated") {
@@ -245,6 +246,11 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
     await pool(trials, config.concurrency, async ({ variant, materialized: item, rep }) => {
       const startedAt = new Date();
       const prefix = `${variant.id} ${item.evalCase.id} rep${rep}`;
+      const guard = spendGuardFromEnv();
+      if (LIVE_KINDS.has(variant.kind) && guard?.exhausted()) {
+        log(`[skip] ${prefix}: spend cap reached ($${guard.totalUsd.toFixed(4)}); not started, rerun later to resume.`);
+        return;
+      }
       let result: HandoverRunResult;
       try {
         clearGlanceCache();

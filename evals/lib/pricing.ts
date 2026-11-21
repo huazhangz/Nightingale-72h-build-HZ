@@ -13,6 +13,12 @@ const PRICES: Record<string, { input: number; output: number; cacheRead: number;
   "claude-haiku-5-5": { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 },
   "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
   "claude-sonnet-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+  // Gemini paid-tier list prices (text, prompts under 200k tokens; output includes thinking tokens),
+  // from third-party listings checked 2026-11-21: the official page was not reachable from the test
+  // environment. Flash-Lite listings disagree ($0.05/$0.20 vs $0.10/$0.40); the higher is used so the
+  // spend cap stays conservative. A free tier costs nothing, so measured spend is an upper bound.
+  "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.3 },
+  "gemini-2.5-flash-lite": { input: 0.1, output: 0.4, cacheRead: 0.025, cacheWrite: 0.1 },
 };
 
 const OFFLINE = new Set(["simulated-rule-policy", "oracle-baseline", "null-baseline", "scripted-model"]);

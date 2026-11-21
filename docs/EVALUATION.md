@@ -188,7 +188,9 @@ npm run eval:risk -- --variants rules,claude --reps 3 --yes
 npm run eval:risk -- --report-only evals/results/<run-directory>
 ```
 
-Options: `--model`, `--effort`, `--cases <ids or strata>`, `--concurrency`, `--out`, `--keep-fixtures`. Variant `gemini` runs the risk agent on Gemini (`--gemini-model`, default `gemini-2.5-flash`; needs `GEMINI_API_KEY` and `--yes`). The paid variant prints an estimate and refuses to start without `--yes` (21 cases × 3 reps on `claude-opus-5-5` ≈ $5). Runs resume, and refuse to mix case-set or prompt versions; infrastructure failures and served-model substitutions go to `errors.jsonl` and are retried, never scored.
+Options: `--model`, `--effort`, `--cases <ids or strata>`, `--concurrency`, `--out`, `--keep-fixtures`. Variant `gemini` runs the risk agent on Gemini (`--gemini-model`, default `gemini-2.5-flash`; needs `GEMINI_API_KEY` and `--yes`), `gemini-lite` on `gemini-2.5-flash-lite`.
+
+**Spend cap for live runs.** With `NIGHTINGALE_EVAL_MAX_USD` set, every live request (both evaluations and `agent:live-check`) goes through `evals/lib/spend.ts`: the measured usage of each response is priced for the model that served it and added to a ledger file shared across commands; once the ledger plus a one-request reserve would cross the cap, further requests are refused with a non-retryable 402 and no new trials start. A served model without a known price trips the cap rather than spending blind. The paid variant prints an estimate and refuses to start without `--yes` (21 cases × 3 reps on `claude-opus-5-5` ≈ $5). Runs resume, and refuse to mix case-set or prompt versions; infrastructure failures and served-model substitutions go to `errors.jsonl` and are retried, never scored.
 
 ## B6. Limits
 

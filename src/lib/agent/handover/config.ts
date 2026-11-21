@@ -1,5 +1,6 @@
 import { createAnthropicClient, type ClientFactory } from "../core/client";
-import { DEFAULT_GEMINI_MODEL, geminiFetch } from "../core/gemini";
+import { DEFAULT_GEMINI_MODEL, GEMINI_BASE_URL, geminiFetch, waitForSlot } from "../core/gemini";
+import { openAICompatFetch } from "../core/openai-compat";
 import { DEFAULT_RUN_CONFIG } from "../core/run-agent";
 import { scriptedFetch, type Responder } from "../core/testing";
 import type { Effort } from "../core/types";
@@ -74,21 +75,36 @@ export function geminiApiKey(env: NodeJS.ProcessEnv = process.env): string | nul
   return env.GEMINI_API_KEY?.trim() || env.GOOGLE_API_KEY?.trim() || null;
 }
 
-/** Client factory for the Gemini transport (also used by the evaluation runners). */
-export function geminiClientFactory(options: { timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): ClientFactory {
+/**
+ * Client factory for the Gemini transport (also used by the evaluation runners).
+ *
+ * NIGHTINGALE_GEMINI_API selects the endpoint: "native" (default; generateContent, key in
+ * x-goog-api-key) or "openai" (the OpenAI-compatible endpoint, key as Authorization: Bearer, which
+ * is what a network proxy that injects bearer credentials can supply; GEMINI_API_KEY is then a
+ * placeholder). `wrapFetch` lets callers add policy around the transport (evaluation spend caps).
+ */
+export function geminiClientFactory(
+  options: { timeoutMs?: number; env?: NodeJS.ProcessEnv; wrapFetch?: (fetchImpl: typeof globalThis.fetch) => typeof globalThis.fetch } = {},
+): ClientFactory {
   const env = options.env ?? process.env;
   const apiKey = geminiApiKey(env);
   if (!apiKey) {
     throw new AgentNotConfiguredError();
   }
   const minIntervalMs = intFrom(env.NIGHTINGALE_GEMINI_MIN_INTERVAL_MS, 0, 0, 120_000);
-  return ({ onResponseStatus }) =>
-    createAnthropicClient({
+  const wrap = options.wrapFetch ?? ((fetchImpl: typeof globalThis.fetch) => fetchImpl);
+  return ({ onResponseStatus }) => {
+    const transport =
+      env.NIGHTINGALE_GEMINI_API === "openai"
+        ? openAICompatFetch({ baseURL: `${GEMINI_BASE_URL}/openai`, apiKey, beforeRequest: (signal) => waitForSlot(minIntervalMs, signal) })
+        : geminiFetch({ apiKey, minIntervalMs });
+    return createAnthropicClient({
       apiKey: "gemini-transport",
       timeoutMs: options.timeoutMs ?? 120_000,
-      fetch: geminiFetch({ apiKey, minIntervalMs }),
+      fetch: wrap(transport),
       onResponseStatus,
     });
+  };
 }
 
 /** Global kill switch for every model call (rule-based features keep working). */

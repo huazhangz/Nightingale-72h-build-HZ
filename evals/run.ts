@@ -78,6 +78,7 @@ async function main(): Promise<number> {
     "claude-v2": { id: "claude-v2", kind: "anthropic", model, promptVersion: "handover-v2", effort },
     "gemini-v1": { id: "gemini-v1", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v1" },
     "gemini-v2": { id: "gemini-v2", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v2" },
+    "gemini-lite-v2": { id: "gemini-lite-v2", kind: "gemini", model: "gemini-2.5-flash-lite", promptVersion: "handover-v2" },
   };
   const variants = values.variants!.split(",").map((name) => {
     const preset = presets[name.trim()];
@@ -96,7 +97,7 @@ async function main(): Promise<number> {
       return 2;
     }
     console.log(
-      `Gemini trials: ${gemini.length * cases.length * reps} on ${values["gemini-model"]} (free tier or billed to the key's Google project; ` +
+      `Gemini trials: ${gemini.length * cases.length * reps} on ${[...new Set(gemini.map((variant) => variant.model))].join(", ")} (free tier or billed to the key's Google project; ` +
         "free-tier prompts may be used by Google, so use synthetic data only).",
     );
     if (!values.yes) {

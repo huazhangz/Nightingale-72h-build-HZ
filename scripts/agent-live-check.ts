@@ -91,6 +91,9 @@ async function main(): Promise<number> {
   const { selectRiskCases } = await import("../evals/risk/cases");
   const { runRiskTrial } = await import("../evals/risk/runner");
   const { prisma } = await import("../src/lib/db");
+  const { geminiClientFactory } = await import("../src/lib/agent/handover/config");
+  const { createAnthropicClient } = await import("../src/lib/agent/core/client");
+  const { capped, spendGuardFromEnv } = await import("../evals/lib/spend");
   const effort = values.effort as import("../src/lib/agent/core/types").Effort;
   const report: Record<string, unknown> = { provider, model, effort, at: new Date().toISOString() };
   let ok = true;
@@ -99,7 +102,15 @@ async function main(): Promise<number> {
   const [handoverCase] = selectCases(values["handover-case"]);
   const materialized = await materializeCase(handoverCase!, `live-${Date.now().toString(36)}`);
   try {
+    // Live providers go through the evaluation spend cap (NIGHTINGALE_EVAL_MAX_USD) like the eval runners.
+    const clientFactory =
+      provider === "gemini"
+        ? geminiClientFactory({ wrapFetch: capped })
+        : provider === "anthropic"
+          ? ({ onResponseStatus }: { onResponseStatus: (status: number) => void }) => createAnthropicClient({ timeoutMs: 120_000, fetch: capped(), onResponseStatus })
+          : undefined;
     const result = await runHandoverAgent(materialized.reader, materialized.patientId, {
+      ...(clientFactory ? { clientFactory } : {}),
       settings: { ...(provider === "simulated" ? {} : { model }), effort, deadlineMs: 240_000 },
       now: EVAL_NOW,
     });
@@ -167,6 +178,10 @@ async function main(): Promise<number> {
   const file = path.join(outDir, `live-check-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
   writeFileSync(file, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\n${ok ? "OK" : "FAILED"}: both agents ${ok ? "submitted" : "did not both submit"}. Details: ${path.relative(root, file)}`);
+  const guard = spendGuardFromEnv();
+  if (guard) {
+    console.log(`Spend ledger: $${guard.totalUsd.toFixed(4)} of $${guard.capUsd.toFixed(2)} cap (${path.relative(root, guard.file)}).`);
+  }
   await prisma.$disconnect();
   return ok ? 0 : 1;
 }

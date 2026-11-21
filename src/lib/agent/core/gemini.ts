@@ -306,8 +306,10 @@ export function geminiErrorResponse(status: number, body: string): Response {
   let message = `Gemini API error ${status}`;
   let retryAfter: string | null = null;
   try {
-    const parsed = JSON.parse(body) as { error?: { message?: string; status?: string; details?: Array<Record<string, unknown>> } };
-    const error = parsed.error;
+    // Native endpoints answer {error: {...}}; the OpenAI-compatible endpoint may answer [{error: {...}}].
+    const raw = JSON.parse(body) as unknown;
+    const first = (Array.isArray(raw) ? raw[0] : raw) as { error?: { message?: string; status?: string; details?: Array<Record<string, unknown>> } };
+    const error = first?.error;
     if (error) {
       message = `${error.status ?? status}: ${error.message ?? ""}`.trim();
       const retry = error.details?.find((detail) => typeof detail.retryDelay === "string")?.retryDelay as string | undefined;
@@ -328,7 +330,7 @@ export function geminiErrorResponse(status: number, body: string): Response {
 let nextSlotAt = 0;
 
 /** Space requests at least `intervalMs` apart across all Gemini clients in this process (free-tier RPM). */
-async function waitForSlot(intervalMs: number, signal?: AbortSignal | null): Promise<void> {
+export async function waitForSlot(intervalMs: number, signal?: AbortSignal | null): Promise<void> {
   if (intervalMs <= 0) {
     return;
   }

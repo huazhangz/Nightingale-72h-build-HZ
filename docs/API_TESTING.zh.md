@@ -18,9 +18,20 @@
 
 同一套 Agent 可以通过传输适配器（`src/lib/agent/core/gemini.ts`）运行在 Google Gemini 上。Tool Runner、工具、护栏、安全下限、评测代码都不变，只替换底层传输。
 
+**方式 A：本地，key 放在环境变量**（native 接口，请求头 `x-goog-api-key`）：
+
 ```bash
 export GEMINI_API_KEY=...            # 不要写进仓库；用完后在 AI Studio 删除或轮换
 export NIGHTINGALE_GEMINI_MIN_INTERVAL_MS=6500   # 免费层每分钟请求数很低，按 ~9 次/分钟发送
+```
+
+**方式 B：Claude Code 云端会话，key 由网络代理注入**（本次实际采用的方式）。安全表单只能把 key 注入到 `Authorization: Bearer`；Gemini 的 native 接口不接受这种形式（要求 OAuth），而 OpenAI 兼容接口接受，所以要切换到 `openai` 模式：
+
+```bash
+export NIGHTINGALE_GEMINI_API=openai      # 走 /v1beta/openai/chat/completions
+export GEMINI_API_KEY=proxy-injected      # 占位值，由代理替换为真实 key
+export NODE_USE_ENV_PROXY=1               # Node 自带的 fetch 默认不走 HTTPS_PROXY；不设此项，请求会绕过代理，key 不会被注入
+export NIGHTINGALE_EVAL_MAX_USD=4.5       # 硬性花费上限（实测用量 × 标价，跨命令累计）
 ```
 
 ```bash
@@ -38,7 +49,7 @@ npm run eval -- --variants gemini-v2 --reps 1 --out evals/results/handover-gemin
 注意：
 - **数据：** 免费层的提示词和回答可能被 Google 用于改进产品。评测数据都是合成数据，可以使用；真实患者数据绝不能经过免费层。
 - **模型：** 默认 `gemini-2.5-flash`，可用 `--gemini-model` 指定。请使用具体的模型 id，不要用 `*-latest` 别名，否则返回的版本号与请求不一致，会被记为 served-model mismatch。
-- **费用：** Gemini 没有写入价格表，报告中费用显示为 n/a。
+- **费用：** `evals/lib/pricing.ts` 已收录 `gemini-2.5-flash`（输入 $0.30、输出 $2.50 / 百万 token，输出含思考 token）和 `gemini-2.5-flash-lite`（按较高的一组公开价格 $0.10 / $0.40）。价格来自第三方页面，测试环境访问不到官方定价页；若使用免费层，实际费用更低。
 - **结论范围：** 结果描述的是 Gemini 模型，不能当作 Claude 的结果。提示词按 Claude 编写，Gemini 的分数可能偏低。
 - **2026-11-21 的尝试结果：** 用户提供的 key 能列出模型，但全部 11 个模型的 `generateContent` 都返回 `402 RESOURCE_EXHAUSTED: Your prepayment credits are depleted`。该 key 所属的 Google 项目处于预付费计费、余额为 0，因此没有免费额度可用。解决方式（二选一）：
   - 在 AI Studio 为该项目充值；
