@@ -27,7 +27,7 @@ Primary surfaces:
 | Route | Role |
 | --- | --- |
 | `/login`, `/register`, `/activate` | Sign in; patient self-registration with a clinic code; one-time activation for invited staff |
-| `/patients` | Worklist sorted by risk level and review window (staff / clinicians / admins); add a patient |
+| `/patients` | Worklist sorted by risk level and review window, with level counts, search and filters; **Add to database**: a new patient (optionally with a first note) or a note for an existing patient, which triggers the automatic risk assessment (staff / clinicians / admins) |
 | `/glance` | Risk triage panel and AI handover summary (staff / clinicians), recency score, consultation progress, highest-risk highlights, unresolved / resolved actions |
 | `/timeline` | Same glance card plus encounter list, note details, revision history, inline highlights |
 | `/note-editor` | Create and patch notes (optimistic `baseVersion`, 409 on conflict) |
@@ -76,7 +76,7 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
-**First live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21, $1.39 in total): risk triage 90.5% exact level with 4.8% under-triage and no severe under-triage, against 57.1% / 38.1% for the rule floor alone (21 author-labelled cases × 3); handover prompt v2 passes 80% of runs and every adversarial case, with zero leakage (20 cases × 3). Claude runs are pending an Anthropic key.
+**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21): after one round of prompt optimisation, the risk agent (`risk-v2`) rates 96.4% of 84 trials at the exact level with **no under-triage**, including 7 holdout cases written after the tuning (rule floor alone: 46.4% exact, 50% under-triage). The handover prompt went from 80% (v2) to the results in [EVALUATION.md](./docs/EVALUATION.md) §7.3, with zero leakage throughout. Claude runs are pending an Anthropic key.
 
 ---
 
@@ -147,6 +147,14 @@ Prisma CLI resolves the database URL relative to `prisma/`. The application Pris
 | PATIENT | `elena.rossi@nightingale.test` (and the other nine patients) | Elena Rossi |
 
 Patients can self-register at `/register` with clinic code `NIGHTINGALE-DEMO-2026`. Staff accounts are created only by invitation (`/admin/users`). These credentials are for the demo database only.
+
+To create your own administrator (kept out of the seed and the repository), run:
+
+```bash
+npm run admin:create -- --email you@example.org --password 'Your-Long-Passphrase-2026' --name "Your Name"
+```
+
+Re-running it for the same email resets the password, re-activates the account and signs out its old sessions.
 
 ---
 

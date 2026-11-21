@@ -215,6 +215,23 @@ What the runs show:
 
 `gemini-2.5-flash-lite` could not be tested: the API answers 404 "no longer available to new users". Total spend for all live testing that day (live check, both evaluations, both models): **$1.39** under a $4.50 hard cap.
 
+## B4c. Prompt optimisation: risk-v1 → risk-v2 (2026-11-21)
+
+`risk-v2` adds calibration anchors for the levels Gemini under-rated in B4b, a "worst plausible current cause decides" rule and exact-quote rules (src/lib/agent/risk/prompts.ts). Because those anchors were chosen after seeing this case set's failures, **7 holdout cases were written after the tuning**, with presentations the prompt never mentions (upper GI bleed with tachycardia, testicular torsion, purpuric rash with fever, cauda equina, cellulitis failing oral antibiotics, mild drug rash, discharge after a resolved lesion). Both prompts ran on all 28 cases × 3 reps on `gemini-2.5-flash` in one run. Report: [docs/eval/2026-11-21-risk-prompt-v1-v2.md](./eval/2026-11-21-risk-prompt-v1-v2.md).
+
+| Variant | exact [95% CI] | under-triage | severe under | sens ≥ HIGH | QWK | all 3 reps exact | holdout exact | $ / trial |
+| --- | --- | --- | ---: | --- | --- | ---: | ---: | ---: |
+| `rules` | 46.4% [28.6, 64.3] | 50.0% | 35.7% | 25.0% | 0.29 | 46.4% | 14.3% | $0 |
+| `risk-v1` | 88.1% [78.6, 96.4] | 8.3% | 0.0% | 89.6% | 0.96 | 78.6% | 90.5% | $0.0034 |
+| `risk-v2` | **96.4%** [89.3, 100] | **0.0%** | 0.0% | **100%** | **0.99** | **96.4%** | **100%** | $0.0027 |
+
+- **v2 − v1: +8.3 points exact, −8.3 points under-triage** (bootstrap CI [2.4, 15.5]; sign-flip permutation p = 0.063; MDE 10.7). v2 removed every under-triage in 84 trials and was cheaper per trial (fewer thinking tokens).
+- **It generalised to the holdout cases:** v1 under-rated cauda equina (HIGH) and spreading cellulitis (MEDIUM) in some attempts; v2 rated all 21 holdout trials correctly. The rules floor alone gets 14.3% of the holdout trials right.
+- The only remaining v2 errors are the floor's known false positive ("the fever resolved", LOW → MEDIUM, 3 trials): the model said LOW, the floor overruled it. That is a rule-engine fix, not a prompt fix.
+- `risk-v2` is now the default; `risk-v1` stays selectable (`NIGHTINGALE_RISK_PROMPT`) for regression comparison.
+
+Caveat: 28 author-labelled cases, one model. The holdout cases guard against the most obvious overfitting, but they were written by the same author as the anchors.
+
 ## B5. Running it
 
 ```bash

@@ -6,9 +6,9 @@ import { createHash } from "node:crypto";
  * the first user message.
  */
 
-export const PROMPT_VERSIONS = ["handover-v1", "handover-v2", "handover-v3"] as const;
+export const PROMPT_VERSIONS = ["handover-v1", "handover-v2", "handover-v3", "handover-v4"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
-export const DEFAULT_PROMPT_VERSION: PromptVersion = "handover-v3";
+export const DEFAULT_PROMPT_VERSION: PromptVersion = "handover-v4";
 
 const V1 = `You are a clinical handover assistant for an outpatient care team.
 
@@ -77,10 +77,25 @@ When the notes document them, always include: suicide or self-harm risk assessme
 </must_include>`,
 );
 
+/**
+ * handover-v4: v3 plus one rule. With v3, 7 of 60 runs filed safety-net advice ("return if chest
+ * pain at rest") as a plan item of warning or critical severity, or as a patient concern, which
+ * presents advice as a current problem.
+ */
+const V4 = V3.replace(
+  `</must_include>`,
+  `</must_include>
+
+<advice_items>
+Safety-net advice, red-flag counselling and "return if ..." instructions are always category "plan" with severity "info", however serious the symptom they mention. Write them as advice ("Advised to seek urgent care if chest pain at rest"), never as a finding, problem or concern.
+</advice_items>`,
+);
+
 const PROMPTS: Record<PromptVersion, string> = {
   "handover-v1": V1,
   "handover-v2": V2,
   "handover-v3": V3,
+  "handover-v4": V4,
 };
 
 export function systemPrompt(version: PromptVersion): string {
