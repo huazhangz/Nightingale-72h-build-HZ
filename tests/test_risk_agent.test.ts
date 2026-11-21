@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ForbiddenError } from "../src/lib/auth/rbac";
 import { clearGlanceCache } from "../src/lib/cache/glanceCache";
 import { createCareEntry } from "../src/lib/care-note/entries";
+import { resolveAssignedClinician } from "../src/lib/care-note/transparency";
 import { prisma } from "../src/lib/db";
 import { createAnthropicClient, type ClientFactory } from "../src/lib/agent/core/client";
 import { assistantMessage, scriptedFetch, scriptResponder, textBlock, toolUseBlock, type Responder } from "../src/lib/agent/core/testing";
@@ -37,7 +38,8 @@ describe("risk levels and floor", () => {
       entry("n2", "SpO2 86% on air three weeks ago.", "2026-10-25T09:00:00Z"),
       entry("n3", "If fever returns call the clinic.", "2026-11-19T09:00:00Z"),
     ]);
-    expect(floor.level).toBe("HIGH");
+    // Lexical red flags floor at MEDIUM; HIGH or CRITICAL needs context (the agent) or a clinician.
+    expect(floor.level).toBe("MEDIUM");
     expect(floor.reasons.map((reason) => reason.rule)).toEqual(["term:chest pain"]);
   });
 
@@ -98,7 +100,7 @@ describe("risk triage agent", () => {
     }
   });
 
-  /** A model that reads the chest-pain note and rates the patient MEDIUM (below the HIGH floor). */
+  /** A model that reads the chest-pain note and rates the patient LOW (below the MEDIUM floor). */
   function mediumModel(): ClientFactory {
     return offline(
       scriptResponder([
@@ -106,8 +108,8 @@ describe("risk triage agent", () => {
         assistantMessage([toolUseBlock(RISK_TOOL_NAMES.notes, { note_ids: [fixture.noteA.id, fixture.noteB.id] })]),
         assistantMessage([
           toolUseBlock(RISK_TOOL_NAMES.submit, {
-            level: "MEDIUM",
-            review: "WITHIN_24H",
+            level: "LOW",
+            review: "ROUTINE",
             summary: "Exertional chest pain with tests ordered.",
             confidence: "medium",
             drivers: [
@@ -129,16 +131,20 @@ describe("risk triage agent", () => {
   it("runs the agent as the clinic service account and applies the floor", async () => {
     const [row] = await prisma.riskAssessment.findMany({ where: { patientId: fixture.patient.id } });
     const done = await runRiskAssessment(row!.id, { clientFactory: mediumModel() });
-    expect(done).toMatchObject({ status: "COMPLETED", method: "agent", modelLevel: "MEDIUM", floorLevel: "HIGH", finalLevel: "HIGH", review: "WITHIN_4H" });
+    expect(done).toMatchObject({ status: "COMPLETED", method: "agent", modelLevel: "LOW", floorLevel: "MEDIUM", finalLevel: "MEDIUM", review: "WITHIN_24H" });
     const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: done!.agentRunId! }, include: { actor: true } });
     expect(run).toMatchObject({ agent: "risk-triage", status: "SUCCEEDED" });
     expect(run.actor).toMatchObject({ isServiceAccount: true, role: "CLINICIAN", status: "DISABLED" });
+    // The service account reads like a clinician but is never shown as anyone's assigned clinician.
+    // (Real clinicians carry an employee code; the service account does not, and NULL sorts first.)
+    await prisma.user.update({ where: { id: fixture.clinician.id }, data: { employeeCode: `EMP-${fixture.clinic.id}` } });
+    expect((await resolveAssignedClinician(fixture.clinic.id)).name).toBe("Cara Clinician");
   });
 
   it("falls back to the rule floor when no model is configured, and when the model fails", async () => {
     const [row] = await prisma.riskAssessment.findMany({ where: { patientId: fixture.patient.id } });
     const rules = await runRiskAssessment(row!.id);
-    expect(rules).toMatchObject({ status: "COMPLETED", method: "rules", finalLevel: "HIGH", agentRunId: null });
+    expect(rules).toMatchObject({ status: "COMPLETED", method: "rules", finalLevel: "MEDIUM", agentRunId: null });
 
     await createCareEntry(fixture.actors.clinician, { patientId: fixture.patient.id, title: "Follow-up", body: "Chest pain settled. Plan: review.", encounterAt: "2026-11-21T09:00:00.000Z" });
     const next = await prisma.riskAssessment.findFirstOrThrow({ where: { patientId: fixture.patient.id, status: "PENDING" } });
@@ -174,10 +180,10 @@ describe("risk triage agent", () => {
     expect(await drainRiskQueue({ clientFactory: mediumModel() })).toBe(1);
     const clinicianView = await getPatientRisk(fixture.actors.clinician, fixture.patient.id);
     const staffView = await getPatientRisk(fixture.actors.staff, fixture.patient.id);
-    expect(clinicianView.assessment).toMatchObject({ level: "HIGH", method: "agent", hiddenEvidence: 0 });
+    expect(clinicianView.assessment).toMatchObject({ level: "MEDIUM", method: "agent", hiddenEvidence: 0 });
     expect(clinicianView.assessment!.drivers).toHaveLength(2);
     // The second driver quotes the clinician draft: the nurse sees the level but not that quote.
-    expect(staffView.assessment!.level).toBe("HIGH");
+    expect(staffView.assessment!.level).toBe("MEDIUM");
     expect(staffView.assessment!.drivers).toHaveLength(1);
     expect(staffView.assessment!.hiddenEvidence).toBeGreaterThan(0);
     expect(JSON.stringify(staffView)).not.toMatch(/cardiology referral/);
@@ -200,7 +206,7 @@ describe("risk triage agent", () => {
     await expect(overridePatientRisk(fixture.actors.staff, fixture.patient.id, { level: "LOW", reason: "Reviewed in person" })).rejects.toBeInstanceOf(ForbiddenError);
     await expect(overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "LOW", reason: "" })).rejects.toMatchObject({ status: 400 });
     const overridden = await overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "CRITICAL", reason: "Ongoing pain on arrival" });
-    expect(overridden.assessment).toMatchObject({ level: "CRITICAL", assessedLevel: "HIGH", override: { level: "CRITICAL", by: "Cara Clinician" } });
+    expect(overridden.assessment).toMatchObject({ level: "CRITICAL", assessedLevel: "MEDIUM", override: { level: "CRITICAL", by: "Cara Clinician" } });
 
     const worklist = await listWorklist(fixture.actors.staff);
     expect(worklist.map((row) => row.patientId)).toEqual([fixture.patient.id]);

@@ -7,6 +7,7 @@ import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cac
 import { notifyEntryChanged, subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
 import { HandoverPanel } from "./HandoverPanel";
+import { RiskPanel } from "./RiskPanel";
 import { RecencyExplainer } from "./RecencyExplainer";
 import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
@@ -131,6 +132,9 @@ export function GlanceView({
   if (!card) {
     return <p className="status">{t("glance.empty")}</p>;
   }
+  if (isPatient && !card.transparency) {
+    return <p className="status">{t("glance.patientEmpty")}</p>;
+  }
 
   const actions = isPatient ? [] : card.unresolvedActions;
   const risks = isPatient ? [] : card.highestRiskHighlights;
@@ -201,6 +205,7 @@ export function GlanceView({
           formatDateTime={formatDateTime}
         />
       ) : null}
+      {canManage ? <RiskPanel patientId={patientId} role={role ?? ""} /> : null}
       {canManage ? <HandoverPanel patientId={patientId} userId={userId} /> : null}
       {!isPatient ? (
         <section className="glance-block">

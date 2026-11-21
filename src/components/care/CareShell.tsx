@@ -1,28 +1,46 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { LoginModal, type LoginRole } from "../auth/LoginModal";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { apiFetch, ApiError, UNAUTHORIZED_EVENT } from "../../lib/api/client";
 import { useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
-import { apiFetch } from "../../lib/api/client";
+import { RiskBadge, type RiskLevelValue } from "../ui/RiskBadge";
 
-type DemoUser = { id: string; name: string; email: string; role: string };
-type DemoPatient = { id: string; name: string; email: string; phone: string | null };
+/**
+ * Authenticated application shell. Identity comes from the server (`/api/auth/me`, signed session
+ * cookie); there is no client-side role switching. Clinical roles choose a patient from their
+ * clinic's worklist; a patient always sees their own record.
+ */
 
-type DemoState = {
+export type SessionUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "PATIENT" | "STAFF" | "CLINICIAN" | "ADMIN";
+  title: string | null;
+  department: string | null;
+  clinic: { id: string; name: string } | null;
+};
+
+type WorklistPatient = { patientId: string; name: string; level: RiskLevelValue | null; pending: boolean };
+
+type CareState = {
+  user: SessionUser;
   patientId: string;
   userId: string;
   role: string;
-  users: DemoUser[];
   clinicName: string;
-  setUserId: (id: string) => void;
+  patients: WorklistPatient[];
+  selectPatient: (patientId: string) => void;
+  refreshPatients: () => Promise<void>;
 };
 
-const CareContext = createContext<DemoState | null>(null);
+const CareContext = createContext<CareState | null>(null);
+const PATIENT_STORAGE_KEY = "nightingale.patient";
 
-export function useCareContext(): DemoState {
+export function useCareContext(): CareState {
   const value = useContext(CareContext);
   if (!value) {
     throw new Error("useCareContext must be used within CareShell");
@@ -30,163 +48,191 @@ export function useCareContext(): DemoState {
   return value;
 }
 
-const ROLE_ORDER = ["PATIENT", "STAFF", "CLINICIAN"] as const;
+export function isClinicalRole(role: string): boolean {
+  return role === "STAFF" || role === "CLINICIAN" || role === "ADMIN";
+}
 
-const NAV: Array<{ href: string; labelKey: MessageKey }> = [
-  { href: "/timeline", labelKey: "nav.timeline" },
-  { href: "/glance", labelKey: "nav.glance" },
-  { href: "/note-editor", labelKey: "nav.noteEditor" },
-  { href: "/search", labelKey: "nav.search" },
+const NAV: Array<{ href: string; labelKey: MessageKey; roles: SessionUser["role"][] }> = [
+  { href: "/patients", labelKey: "nav.patients", roles: ["STAFF", "CLINICIAN", "ADMIN"] },
+  { href: "/glance", labelKey: "nav.glance", roles: ["PATIENT", "STAFF", "CLINICIAN", "ADMIN"] },
+  { href: "/timeline", labelKey: "nav.timeline", roles: ["PATIENT", "STAFF", "CLINICIAN", "ADMIN"] },
+  { href: "/note-editor", labelKey: "nav.noteEditor", roles: ["STAFF", "CLINICIAN"] },
+  { href: "/search", labelKey: "nav.search", roles: ["PATIENT", "STAFF", "CLINICIAN", "ADMIN"] },
+  { href: "/admin/users", labelKey: "nav.admin", roles: ["ADMIN"] },
 ];
+
+function readStoredPatient(): string {
+  try {
+    return window.localStorage.getItem(PATIENT_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 export function CareShell({ children }: { children: ReactNode }) {
   const { t, locale, setLocale, locales } = useI18n();
   const pathname = usePathname();
-  const [users, setUsers] = useState<DemoUser[]>([]);
-  const [patients, setPatients] = useState<DemoPatient[]>([]);
-  const [featuredPatientId, setFeaturedPatientId] = useState<string>("");
-  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
-  const [userId, setUserId] = useState<string>("");
-  const [clinicName, setClinicName] = useState("Nightingale");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [patients, setPatients] = useState<WorklistPatient[]>([]);
+  const [selected, setSelected] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pendingRole, setPendingRole] = useState<LoginRole | null>(null);
+
+  const goToLogin = useCallback(() => {
+    const next = `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ""}`;
+    router.replace(`/login?next=${encodeURIComponent(next)}`);
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
-    void apiFetch<{
-      clinic: { name: string };
-      users: DemoUser[];
-      patients?: DemoPatient[];
-      patientId: string | null;
-      featuredPatientId?: string | null;
-      defaultUserId: string | null;
-    }>("/api/demo", { userId: "bootstrap" })
-      .then((demo) => {
-        setUsers(demo.users);
-        setClinicName(demo.clinic.name);
-        if (demo.patients?.length) {
-          setPatients(demo.patients);
-        }
-        const featured = demo.featuredPatientId ?? demo.patientId;
-        if (featured) {
-          setFeaturedPatientId(featured);
-          setSelectedPatientId(featured);
-        }
+    let cancelled = false;
+    apiFetch<{ user: SessionUser }>("/api/auth/me")
+      .then(({ user: me }) => {
+        if (!cancelled) setUser(me);
       })
       .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : t("session.loadError"));
+        if (cancelled) return;
+        if (caught instanceof ApiError && caught.status === 401) goToLogin();
+        else setError(caught instanceof Error ? caught.message : t("auth.genericError"));
       });
-  }, [t]);
+    const onUnauthorized = () => goToLogin();
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    };
+    // Identity is loaded once per mount; navigation keeps the shell mounted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const actor = users.find((user) => user.id === userId);
-  const canSwitchPatient = actor?.role === "STAFF" || actor?.role === "CLINICIAN" || actor?.role === "ADMIN";
-  const patientId = actor?.role === "PATIENT" ? userId : selectedPatientId || featuredPatientId;
-  const value = useMemo(
-    () => ({
+  const refreshPatients = useCallback(async () => {
+    const { patients: rows } = await apiFetch<{ patients: WorklistPatient[] }>("/api/patients");
+    setPatients(rows);
+  }, []);
+
+  useEffect(() => {
+    if (user && isClinicalRole(user.role)) {
+      void refreshPatients().catch((caught: unknown) => setError(caught instanceof Error ? caught.message : t("auth.genericError")));
+    }
+  }, [user, refreshPatients, t]);
+
+  const fromUrl = searchParams?.get("patient") ?? "";
+  // A ?patient= link selects that patient once, when the link changes; the picker can override it.
+  useEffect(() => {
+    if (fromUrl && patients.some((patient) => patient.patientId === fromUrl)) {
+      setSelected(fromUrl);
+    }
+  }, [fromUrl, patients]);
+  // Default selection: last choice on this device, else the most urgent patient on the worklist.
+  useEffect(() => {
+    if (!user || !isClinicalRole(user.role) || patients.length === 0) return;
+    const known = (id: string) => patients.some((patient) => patient.patientId === id);
+    if (selected && known(selected)) return;
+    const stored = readStoredPatient();
+    setSelected(stored && known(stored) ? stored : patients[0]!.patientId);
+  }, [user, patients, selected]);
+
+  const selectPatient = useCallback((patientId: string) => {
+    setSelected(patientId);
+    try {
+      window.localStorage.setItem(PATIENT_STORAGE_KEY, patientId);
+    } catch {
+      // Storage unavailable (private mode): selection still works for this session.
+    }
+  }, []);
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
+    router.replace("/login");
+  }
+
+  const value = useMemo<CareState | null>(() => {
+    if (!user) return null;
+    const patientId = user.role === "PATIENT" ? user.id : selected;
+    return {
+      user,
       patientId,
-      userId,
-      role: actor?.role ?? "",
-      users,
-      clinicName,
-      setUserId,
-    }),
-    [patientId, userId, users, clinicName, actor?.role],
-  );
+      userId: user.id,
+      role: user.role,
+      clinicName: user.clinic?.name ?? "Nightingale",
+      patients,
+      selectPatient,
+      refreshPatients,
+    };
+  }, [user, selected, patients, selectPatient, refreshPatients]);
+
+  if (!value) {
+    return (
+      <div className="app-shell">
+        <main className="main" id="main">
+          {error ? <p className="status error" role="alert">{error}</p> : <p className="status">{t("shell.loading")}</p>}
+        </main>
+      </div>
+    );
+  }
+
+  const clinical = isClinicalRole(value.role);
+  const current = patients.find((patient) => patient.patientId === value.patientId);
 
   return (
     <CareContext.Provider value={value}>
       <div className="app-shell">
+        <a className="skip-link" href="#main">
+          {t("shell.skip")}
+        </a>
         <header className="topbar">
           <div>
-            <p className="eyebrow">{clinicName}</p>
+            <p className="eyebrow">{value.clinicName}</p>
             <p className="brand">{t("brand")}</p>
           </div>
           <div className="header-controls">
-          {canSwitchPatient && patients.length > 0 ? (
-            <fieldset className="role-selector">
-              <legend>{t("patient.legend")}</legend>
-              <label className="sr-only" htmlFor="patient-select">
-                {t("patient.aria")}
-              </label>
-              <select
-                id="patient-select"
-                value={patientId}
-                onChange={(event) => setSelectedPatientId(event.target.value)}
-                aria-label={t("patient.aria")}
-              >
-                {patients.map((patient) => (
-                  <option key={patient.id} value={patient.id}>
-                    {patient.phone ? `${patient.name} · ${patient.phone}` : patient.name}
+            {clinical && patients.length > 0 ? (
+              <div className="role-selector patient-picker">
+                <label htmlFor="patient-select">{t("patient.legend")}</label>
+                <div className="patient-picker-row">
+                  <select id="patient-select" value={value.patientId} onChange={(event) => selectPatient(event.target.value)}>
+                    {patients.map((patient) => (
+                      <option key={patient.patientId} value={patient.patientId}>
+                        {patient.name}
+                      </option>
+                    ))}
+                  </select>
+                  {current ? <RiskBadge level={current.level} pending={current.pending} /> : null}
+                </div>
+              </div>
+            ) : null}
+            <div className="role-selector language-selector">
+              <label htmlFor="language-select">{t("language.legend")}</label>
+              <select id="language-select" value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
+                {locales.map((code) => (
+                  <option key={code} value={code}>
+                    {t(`language.${code}` as MessageKey)}
                   </option>
                 ))}
               </select>
-            </fieldset>
-          ) : null}
-          <fieldset className="role-selector language-selector">
-            <legend>{t("language.legend")}</legend>
-            <label className="sr-only" htmlFor="language-select">
-              {t("language.aria")}
-            </label>
-            <select
-              id="language-select"
-              value={locale}
-              onChange={(event) => setLocale(event.target.value as typeof locale)}
-              aria-label={t("language.aria")}
-            >
-              {locales.map((code) => (
-                <option key={code} value={code}>
-                  {t(`language.${code}` as MessageKey)}
-                </option>
-              ))}
-            </select>
-          </fieldset>
-          <fieldset className="role-selector">
-            <legend>{t("role.legend")}</legend>
-            <div className="role-selector-row" role="radiogroup" aria-label={t("role.aria")}>
-              {ROLE_ORDER.map((role) => {
-                const match = users.find((user) => user.role === role);
-                const selected = actor?.role === role;
-                return (
-                  <button
-                    key={role}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={selected ? "role-btn active" : "role-btn"}
-                    disabled={role === "PATIENT" ? false : !match}
-                    onClick={() => {
-                      if (role !== "PATIENT" && !match) {
-                        return;
-                      }
-                      if (selected && userId) {
-                        return;
-                      }
-                      setUserId("");
-                      setPendingRole(role);
-                    }}
-                  >
-                    {t(`role.${role}` as MessageKey)}
-                  </button>
-                );
-              })}
             </div>
-          </fieldset>
+            <div className="user-menu" aria-label={value.user.name}>
+              <div className="user-menu-identity">
+                <span className="user-name">{value.user.name}</span>
+                <span className="user-role">{t(`role.${value.role}` as MessageKey)}</span>
+              </div>
+              <Link className="btn btn-secondary btn-small" href="/account">
+                {t("shell.account")}
+              </Link>
+              <button type="button" className="btn btn-secondary btn-small" onClick={() => void signOut()}>
+                {t("shell.signOut")}
+              </button>
+            </div>
           </div>
         </header>
         <nav className="nav" aria-label={t("nav.aria")}>
-          {NAV.filter(
-            (item) =>
-              item.href !== "/note-editor" || actor?.role === "STAFF" || actor?.role === "CLINICIAN",
-          ).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={pathname === item.href ? "nav-link active" : "nav-link"}
-            >
+          {NAV.filter((item) => item.roles.includes(value.user.role)).map((item) => (
+            <Link key={item.href} href={item.href} className={pathname === item.href ? "nav-link active" : "nav-link"} aria-current={pathname === item.href ? "page" : undefined}>
               {t(item.labelKey)}
             </Link>
           ))}
         </nav>
-        <main className="main">
+        <main className="main" id="main">
           {error ? (
             <p className="status error" role="alert">
               {error}
@@ -194,24 +240,12 @@ export function CareShell({ children }: { children: ReactNode }) {
           ) : null}
           {children}
         </main>
-        {pendingRole ? (
-          <LoginModal
-            role={pendingRole}
-            onCancel={() => {
-              setUserId("");
-              setPendingRole(null);
-            }}
-            onVerified={(id) => {
-              setUserId(id);
-              setPendingRole(null);
-            }}
-          />
-        ) : null}
       </div>
     </CareContext.Provider>
   );
 }
 
+/** Page frame for patient-scoped views: waits for identity and a selected patient. */
 export function CarePage({
   titleKey,
   children,
@@ -221,18 +255,10 @@ export function CarePage({
 }) {
   const { t } = useI18n();
   const { patientId, userId, role } = useCareContext();
-  if (!patientId || !userId) {
-    return (
-      <>
-        <h1>{t(titleKey)}</h1>
-        <p className="status">{t("session.preparing")}</p>
-      </>
-    );
-  }
   return (
     <>
       <h1>{t(titleKey)}</h1>
-      {children({ patientId, userId, role })}
+      {patientId ? children({ patientId, userId, role }) : <p className="status">{t("shell.noPatient")}</p>}
     </>
   );
 }

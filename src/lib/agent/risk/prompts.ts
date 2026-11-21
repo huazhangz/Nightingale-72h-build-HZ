@@ -33,7 +33,7 @@ Give 1-6 drivers: the factors that set the level, each marked "raises" or "lower
 </drivers>
 
 <safety>
-A deterministic safety floor runs after you: certain affirmed findings (severe vitals, chest pain, breathlessness, anaphylaxis, fever) set a minimum level that your answer cannot lower. Judge honestly anyway; if you agree with a floor finding, say why in a driver.
+A deterministic safety floor runs after you and can only raise your level: severe vital signs, anaphylaxis and severe respiratory distress set CRITICAL; a clinician-marked critical finding sets HIGH; an affirmed red-flag symptom (chest pain, breathlessness, hyperpyrexia, fever) sets MEDIUM. Whether such a symptom is HIGH or CRITICAL is your judgement from the context; say why in a driver.
 </safety>
 
 <data_boundary>

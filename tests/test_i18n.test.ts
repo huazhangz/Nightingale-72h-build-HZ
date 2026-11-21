@@ -46,6 +46,19 @@ describe("i18n dictionaries", () => {
     expect(translate("en", "version.history")).toBe("Version history");
   });
 
+  it("has every key built from a template string (roles, risk levels, review windows) in every locale", () => {
+    const dynamicKeys = [
+      ...["PATIENT", "STAFF", "CLINICIAN", "ADMIN"].map((role) => `role.${role}`),
+      ...["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((level) => `risk.level.${level}`),
+      ...["IMMEDIATE", "WITHIN_4H", "WITHIN_24H", "ROUTINE"].map((review) => `risk.review.${review}`),
+    ];
+    for (const locale of LOCALES) {
+      for (const key of dynamicKeys) {
+        expect(dictionaries[locale][key as MessageKey], `${locale}:${key}`).toBeTruthy();
+      }
+    }
+  });
+
   it("formats dates with Intl according to the selected locale", () => {
     const instant = new Date("2024-06-15T12:00:00.000Z");
     const en = formatDateTime(instant, "en");

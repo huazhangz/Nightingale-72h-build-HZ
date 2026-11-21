@@ -1,7 +1,7 @@
 "use client";
 
-import { CarePage } from "../../src/components/care/CareShell";
-import { SearchView } from "../../src/components/care/SearchView";
+import { CarePage } from "../../../src/components/care/CareShell";
+import { SearchView } from "../../../src/components/care/SearchView";
 
 export default function SearchRoute() {
   return (

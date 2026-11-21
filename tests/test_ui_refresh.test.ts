@@ -2,9 +2,12 @@ import { createElement, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
+const routerMock = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }));
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => "/timeline",
+  useRouter: () => routerMock,
 }));
 
 vi.mock("next/link", () => ({
@@ -323,40 +326,33 @@ describe("timeline detail modal and inline risk highlighting", () => {
   });
 });
 
-describe("role-switch login gate", () => {
+describe("authenticated app shell", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    routerMock.replace.mockReset();
   });
 
-  it("clears the session and opens login instead of keeping the previous user", async () => {
+  function mockApi(me: unknown, patients: unknown[] = []) {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.includes("/api/demo")) {
-          return new Response(
-            JSON.stringify({
-              clinic: { name: "Nightingale" },
-              users: [
-                { id: "staff-1", name: "Museil Kamil", email: "staff@nightingale.test", role: "STAFF" },
-                { id: "clin-1", name: "Joe Zhou", email: "clinician@nightingale.test", role: "CLINICIAN" },
-              ],
-              patients: [
-                { id: "p1", name: "Elena Rossi", email: "elena.rossi@nightingale.test", phone: "5550101001" },
-              ],
-              patientId: "p1",
-              featuredPatientId: "p1",
-              defaultUserId: null,
-            }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
+        if (url === "/api/auth/me") {
+          return me
+            ? new Response(JSON.stringify({ user: me }), { status: 200 })
+            : new Response(JSON.stringify({ error: "Authentication required" }), { status: 401 });
+        }
+        if (url === "/api/patients") {
+          return new Response(JSON.stringify({ patients }), { status: 200 });
         }
         return new Response(JSON.stringify({ error: `unmocked ${url}` }), { status: 404 });
       }),
     );
+  }
 
-    render(
+  function renderShell() {
+    return render(
       createElement(
         I18nProvider,
         null,
@@ -365,22 +361,48 @@ describe("role-switch login gate", () => {
           null,
           createElement(CarePage, {
             titleKey: "pages.timeline",
-            children: ({ userId }: { userId: string }) =>
-              createElement("p", { "data-testid": "session-user" }, userId),
+            children: ({ patientId }: { patientId: string }) => createElement("p", { "data-testid": "session-patient" }, patientId),
           }),
         ),
       ),
     );
+  }
 
-    const staffRole = await screen.findByRole("radio", { name: "STAFF" });
-    expect(screen.getByText("Preparing clinic session…")).toBeTruthy();
-    expect(screen.queryByTestId("session-user")).toBeNull();
+  it("sends signed-out visitors to the login page and renders no data", async () => {
+    mockApi(null);
+    renderShell();
+    await waitFor(() => expect(routerMock.replace).toHaveBeenCalledWith("/login?next=%2Ftimeline"));
+    expect(screen.queryByTestId("session-patient")).toBeNull();
+  });
 
-    fireEvent.click(staffRole);
-    expect(await screen.findByRole("dialog")).toBeTruthy();
-    expect(screen.getByLabelText("Employee code")).toBeTruthy();
-    expect(screen.getByText("Preparing clinic session…")).toBeTruthy();
-    expect(screen.queryByTestId("session-user")).toBeNull();
+  it("gives clinicians a patient picker (names only), role-based navigation and sign-out", async () => {
+    mockApi(
+      { id: "clin-1", name: "Joe Zhou", email: "clinician@nightingale.test", role: "CLINICIAN", title: null, department: null, clinic: { id: "c1", name: "Nightingale Demo Clinic" } },
+      [
+        { patientId: "p-high", name: "Lars Johansson", level: "HIGH", pending: false },
+        { patientId: "p-low", name: "Elena Rossi", level: "LOW", pending: false },
+      ],
+    );
+    renderShell();
+    expect(await screen.findByText("Joe Zhou")).toBeTruthy();
+    expect((await screen.findByTestId("session-patient")).textContent).toBe("p-high");
+    const picker = screen.getByLabelText("Patient") as HTMLSelectElement;
+    expect([...picker.options].map((option) => option.textContent)).toEqual(["Lars Johansson", "Elena Rossi"]);
+    expect(document.body.textContent).not.toMatch(/555-?010/);
+    expect(screen.getByRole("link", { name: "Patients" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Note editor" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Users" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+    fireEvent.change(picker, { target: { value: "p-low" } });
+    expect(screen.getByTestId("session-patient").textContent).toBe("p-low");
+  });
+
+  it("scopes patients to their own record without a picker or clinical navigation", async () => {
+    mockApi({ id: "pat-1", name: "Elena Rossi", email: "elena@x.test", role: "PATIENT", title: null, department: null, clinic: { id: "c1", name: "Clinic" } });
+    renderShell();
+    expect((await screen.findByTestId("session-patient")).textContent).toBe("pat-1");
+    expect(screen.queryByLabelText("Patient")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Patients" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Note editor" })).toBeNull();
   });
 });

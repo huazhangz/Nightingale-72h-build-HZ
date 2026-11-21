@@ -1,8 +1,8 @@
 "use client";
 
 import { Suspense } from "react";
-import { CarePage } from "../../src/components/care/CareShell";
-import { NoteEditor } from "../../src/components/care/NoteEditor";
+import { CarePage } from "../../../src/components/care/CareShell";
+import { NoteEditor } from "../../../src/components/care/NoteEditor";
 
 export default function NoteEditorRoute() {
   return (

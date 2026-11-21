@@ -10,8 +10,15 @@ import { maxLevel, riskRank, type RiskLevel } from "./levels";
  * only notes close to the latest encounter count, so a resolved red flag does not pin a patient high
  * forever.
  *
- * Tier choices are deliberately conservative where the clinical meaning is unambiguous and silent
- * where it is not (allergy history, for example, raises no floor).
+ * Tiers follow the strength of the evidence, not just the word:
+ *   - objective or explicitly severe findings (SpO2 < 90%, BP > 180/110, anaphylaxis, severe
+ *     respiratory distress) floor at CRITICAL;
+ *   - a clinician-marked critical highlight (human judgement) floors at HIGH;
+ *   - lexical red-flag symptoms (chest pain, breathlessness, hyperpyrexia, fever) floor at MEDIUM:
+ *     never routine, but whether they are HIGH or CRITICAL depends on context the agent reads.
+ * Measured on the demo notes, a HIGH floor for lexical mentions put 10 of 10 patients at HIGH
+ * (safety-net advice such as "we safety-netted chest pain" slips past NegEx), which makes a
+ * triage list useless. Allergy history raises no floor.
  */
 
 export const FLOOR_WINDOW_DAYS = 7;
@@ -21,9 +28,9 @@ export const FLOOR_RULES: Record<string, { level: RiskLevel; label: string }> = 
   "vital:bp>180/110": { level: "CRITICAL", label: "Blood pressure above 180/110" },
   "term:anaphylaxis": { level: "CRITICAL", label: "Anaphylaxis" },
   "term:severe respiratory distress": { level: "CRITICAL", label: "Severe respiratory distress" },
-  "term:chest pain": { level: "HIGH", label: "Chest pain" },
-  "term:shortness of breath": { level: "HIGH", label: "Shortness of breath" },
-  "term:hyperpyrexia": { level: "HIGH", label: "Hyperpyrexia" },
+  "term:chest pain": { level: "MEDIUM", label: "Chest pain" },
+  "term:shortness of breath": { level: "MEDIUM", label: "Shortness of breath" },
+  "term:hyperpyrexia": { level: "MEDIUM", label: "Hyperpyrexia" },
   "term:fever": { level: "MEDIUM", label: "Fever" },
 };
 

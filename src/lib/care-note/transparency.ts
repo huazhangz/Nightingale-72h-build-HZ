@@ -11,8 +11,9 @@ export { CONSULTATION_STAGES, stageIndex };
 
 export async function resolveAssignedClinician(clinicId: string): Promise<AssignedClinician> {
   const clinician = await prisma.user.findFirst({
-    where: { clinicId, role: "CLINICIAN" },
-    orderBy: { employeeCode: "asc" },
+    // Service accounts (the triage agent) are CLINICIAN-scoped for reading but are never anyone's clinician.
+    where: { clinicId, role: "CLINICIAN", isServiceAccount: false, status: "ACTIVE" },
+    orderBy: [{ employeeCode: "asc" }, { createdAt: "asc" }],
   });
   return {
     name: clinician?.name ?? "Attending clinician",

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
-import { CareShell } from "../src/components/care/CareShell";
 import { I18nProvider } from "../src/lib/i18n/I18nContext";
 import "./globals.css";
 
@@ -18,16 +17,14 @@ const serif = Source_Serif_4({
 
 export const metadata = {
   title: "Nightingale care notes",
-  description: "Longitudinal patient notes for clinic teams",
+  description: "Longitudinal patient notes with AI risk triage and handover for clinic teams",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body className={`${sans.variable} ${serif.variable}`}>
-        <I18nProvider>
-          <CareShell>{children}</CareShell>
-        </I18nProvider>
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );
