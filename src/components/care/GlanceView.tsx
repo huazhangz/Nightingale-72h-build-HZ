@@ -6,6 +6,7 @@ import { apiFetch } from "../../lib/api/client";
 import type { GlanceAction, GlanceHighlight, GlanceTopCard } from "../../lib/cache/glanceCache";
 import { notifyEntryChanged, subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import { ConsultationBoard } from "./ConsultationBoard";
+import { HandoverPanel } from "./HandoverPanel";
 import { RecencyExplainer } from "./RecencyExplainer";
 import { riskBadgeClass } from "../../lib/care-note/risk-tone";
 import { riskLabelKey, useI18n } from "../../lib/i18n/I18nContext";
@@ -200,6 +201,7 @@ export function GlanceView({
           formatDateTime={formatDateTime}
         />
       ) : null}
+      {canManage ? <HandoverPanel patientId={patientId} userId={userId} /> : null}
       {!isPatient ? (
         <section className="glance-block">
           <header className="glance-block-head">

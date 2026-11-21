@@ -66,42 +66,45 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  authoredEntries    CareEntry[]         @relation("EntryAuthor")
-  patientEntries     CareEntry[]         @relation("EntryPatient")
+  authoredEntries    CareEntry[]             @relation("EntryAuthor")
+  patientEntries     CareEntry[]             @relation("EntryPatient")
   revisions          EntryRevision[]
   comments           Comment[]
   highlights         Highlight[]
   highlightFeedbacks HighlightFeedback[]
   auditLogs          AuditLog[]
   entryViews         CareEntryViewer[]
-  createdActions     CareAction[]        @relation("ActionCreator")
-  resolvedActions    CareAction[]        @relation("ActionResolver")
+  createdActions     CareAction[]            @relation("ActionCreator")
+  resolvedActions    CareAction[]            @relation("ActionResolver")
+  agentRuns          AgentRun[]              @relation("AgentRunActor")
+  patientAgentRuns   AgentRun[]              @relation("AgentRunPatient")
+  decidedProposals   AgentFollowupProposal[] @relation("ProposalDecider")
 
   @@index([clinicId, role])
   @@index([employeeCode])
 }
 
 model CareEntry {
-  id          String      @id @default(cuid())
-  clinicId    String
-  clinic      Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  patientId   String
-  patient     User        @relation("EntryPatient", fields: [patientId], references: [id], onDelete: Restrict)
-  authorId    String
-  author      User        @relation("EntryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-  title       String
-  body        String      @default("")
-  version     Int         @default(1)
-  status      EntryStatus @default(DRAFT)
-  encounterAt DateTime
+  id                String            @id @default(cuid())
+  clinicId          String
+  clinic            Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId         String
+  patient           User              @relation("EntryPatient", fields: [patientId], references: [id], onDelete: Restrict)
+  authorId          String
+  author            User              @relation("EntryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  title             String
+  body              String            @default("")
+  version           Int               @default(1)
+  status            EntryStatus       @default(DRAFT)
+  encounterAt       DateTime
   consultationStage ConsultationStage @default(SUBMITTED)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
-  revisions  EntryRevision[]
-  comments   Comment[]
-  highlights Highlight[]
-  viewers    CareEntryViewer[]
+  revisions   EntryRevision[]
+  comments    Comment[]
+  highlights  Highlight[]
+  viewers     CareEntryViewer[]
   careActions CareAction[]
 
   @@index([clinicId, patientId])
@@ -178,21 +181,21 @@ model CareEntryViewer {
 }
 
 model Highlight {
-  id          String          @id @default(cuid())
-  careEntryId String
-  careEntry   CareEntry       @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
-  revisionId  String?
-  revision    EntryRevision?  @relation(fields: [revisionId], references: [id], onDelete: SetNull)
-  createdById String
-  createdBy   User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
-  startOffset        Int
-  endOffset          Int
-  excerpt            String
-  provenancePointer  String?
-  label              String?
-  source             HighlightSource @default(HUMAN)
-  confidence         Float?
-  createdAt          DateTime        @default(now())
+  id                String          @id @default(cuid())
+  careEntryId       String
+  careEntry         CareEntry       @relation(fields: [careEntryId], references: [id], onDelete: Cascade)
+  revisionId        String?
+  revision          EntryRevision?  @relation(fields: [revisionId], references: [id], onDelete: SetNull)
+  createdById       String
+  createdBy         User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  startOffset       Int
+  endOffset         Int
+  excerpt           String
+  provenancePointer String?
+  label             String?
+  source            HighlightSource @default(HUMAN)
+  confidence        Float?
+  createdAt         DateTime        @default(now())
 
   feedbacks HighlightFeedback[]
 
@@ -235,4 +238,75 @@ model FeatureWeight {
   version     Int      @default(1)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum ProposalStatus {
+  PROPOSED
+  ACCEPTED
+  DISMISSED
+}
+
+/// One agent execution. Stores outcome, usage and a metadata-only trace (tool names, sizes, timings);
+/// never raw tool payloads. The summary is post-guardrail and already PHI-redacted.
+model AgentRun {
+  id               String         @id @default(cuid())
+  agent            String
+  clinicId         String
+  patientId        String
+  patient          User           @relation("AgentRunPatient", fields: [patientId], references: [id], onDelete: Cascade)
+  actorId          String
+  actor            User           @relation("AgentRunActor", fields: [actorId], references: [id], onDelete: Cascade)
+  actorRole        Role
+  promptVersion    String
+  promptHash       String
+  model            String
+  servedModel      String?
+  fallbackUsed     Boolean        @default(false)
+  status           AgentRunStatus @default(RUNNING)
+  outcome          String?
+  errorKind        String?
+  steps            Int            @default(0)
+  inputTokens      Int            @default(0)
+  outputTokens     Int            @default(0)
+  cacheReadTokens  Int            @default(0)
+  cacheWriteTokens Int            @default(0)
+  durationMs       Int?
+  trace            Json?
+  summary          Json?
+  guardrail        Json?
+  startedAt        DateTime       @default(now())
+  finishedAt       DateTime?
+
+  proposals AgentFollowupProposal[]
+
+  @@index([patientId, actorRole, startedAt])
+  @@index([actorId, startedAt])
+}
+
+/// A follow-up the agent drafted. It becomes a CareAction only when a clinician accepts it.
+model AgentFollowupProposal {
+  id           String         @id @default(cuid())
+  runId        String
+  run          AgentRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
+  patientId    String
+  ref          String
+  sourceNoteId String
+  kind         String
+  text         String
+  rationale    String
+  status       ProposalStatus @default(PROPOSED)
+  careActionId String?
+  decidedById  String?
+  decidedBy    User?          @relation("ProposalDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt    DateTime?
+  createdAt    DateTime       @default(now())
+
+  @@index([patientId, status])
+  @@index([runId])
 }

@@ -1,5 +1,10 @@
 import type { Role } from "@prisma/client";
-import { requireActor, errorResponse } from "../auth/session";
+import { requireActor, errorResponse, HttpError } from "../auth/session";
+import { runHandoverAgent } from "../agent/handover/agent";
+import { AgentNotConfiguredError, agentSettingsFromEnv, isAgentAvailable } from "../agent/handover/config";
+import { isPromptVersion } from "../agent/handover/prompts";
+import { decideProposal, latestHandoverRun, publicRunFromResult } from "../agent/handover/repository";
+import { agentRunLimiter } from "../agent/rate-limit";
 import { clearedSessionCookie, sessionCookie, signSession } from "../auth/session-token";
 import { assertPatientIsolation } from "../auth/rbac";
 import { verifyPatientLogin, verifyStaffLogin } from "../auth/login";
@@ -389,4 +394,75 @@ function loginSuccess(user: { id: string; role: Role }): Response {
 
 export function handleLogout(): Response {
   return Response.json({ ok: true }, { headers: { "set-cookie": clearedSessionCookie() } });
+}
+
+function agentErrorResponse(error: unknown): Response {
+  if (error instanceof AgentNotConfiguredError) {
+    return Response.json({ error: error.message, code: error.code }, { status: 503 });
+  }
+  return errorResponse(error);
+}
+
+export async function handleAgentStatus(request: Request): Promise<Response> {
+  try {
+    await requireActor(request);
+    const settings = agentSettingsFromEnv();
+    return Response.json({
+      available: isAgentAvailable(settings),
+      client: settings.client,
+      model: settings.client === "simulated" ? "simulated-rule-policy" : settings.model,
+      promptVersion: settings.promptVersion,
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handleRunHandover(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    const payload = (await request.json().catch(() => ({}))) as { promptVersion?: unknown };
+    if (payload.promptVersion !== undefined && !isPromptVersion(payload.promptVersion)) {
+      throw new HttpError(400, "INVALID_PROMPT_VERSION", "Unknown promptVersion");
+    }
+    const limit = agentRunLimiter.take(actor.id);
+    if (!limit.allowed) {
+      return Response.json(
+        { error: "Too many handover runs; try again shortly.", code: "RATE_LIMITED" },
+        { status: 429, headers: { "retry-after": String(Math.ceil(limit.retryAfterMs / 1000)) } },
+      );
+    }
+    const startedAt = new Date();
+    const result = await runHandoverAgent(actor, patientId, {
+      ...(isPromptVersion(payload.promptVersion) ? { promptVersion: payload.promptVersion } : {}),
+      signal: request.signal,
+    });
+    return Response.json({ run: publicRunFromResult(result, startedAt) });
+  } catch (error) {
+    return agentErrorResponse(error);
+  }
+}
+
+export async function handleLatestHandover(request: Request, patientId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    assertPatientIsolation(actor, patientId);
+    return Response.json({ run: await latestHandoverRun(actor, patientId) });
+  } catch (error) {
+    return agentErrorResponse(error);
+  }
+}
+
+export async function handleDecideProposal(request: Request, proposalId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const payload = (await request.json().catch(() => ({}))) as { decision?: unknown };
+    if (payload.decision !== "accept" && payload.decision !== "dismiss") {
+      throw new HttpError(400, "INVALID_DECISION", "decision must be accept or dismiss");
+    }
+    return Response.json({ proposal: await decideProposal(actor, proposalId, payload.decision) });
+  } catch (error) {
+    return agentErrorResponse(error);
+  }
 }

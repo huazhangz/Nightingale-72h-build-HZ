@@ -957,3 +957,147 @@ textarea:focus,
     padding: 1rem;
   }
 }
+
+/* ---- AI handover summary ---------------------------------------------- */
+.handover-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem 1rem 1rem;
+  background: var(--paper);
+}
+
+.handover-disclaimer {
+  margin: 0 0 0.6rem;
+  font-size: 0.86rem;
+}
+
+.handover-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.handover-item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.65rem 0.85rem;
+}
+
+.handover-item-guardrail {
+  border-left: 4px solid var(--danger);
+}
+
+.handover-item-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.handover-statement {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+}
+
+.handover-flags {
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.handover-chip-safety {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: #fff4f2;
+}
+
+.handover-chip-sim {
+  display: inline-block;
+  margin: 0 0 0.6rem;
+}
+
+.handover-citations {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.handover-citation {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.handover-quote {
+  color: var(--muted);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.handover-report {
+  margin: 0.2rem 0 0.6rem;
+}
+
+.handover-report button.chip {
+  cursor: pointer;
+  font: inherit;
+  border: 1px solid var(--line);
+}
+
+.handover-removed {
+  margin: 0 0 0.7rem;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.handover-proposals {
+  margin-top: 0.9rem;
+}
+
+.handover-proposals h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.handover-proposals ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.handover-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.btn.btn-secondary {
+  background: #fff;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.btn.btn-secondary:hover:not(:disabled) {
+  background: var(--chip);
+}
+
+.handover-meta {
+  margin: 0.8rem 0 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
