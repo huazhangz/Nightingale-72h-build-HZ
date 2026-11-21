@@ -1,5 +1,5 @@
 import type { BetaContentBlock, BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { classifyMentionContext } from "../../src/lib/care-note/keyword-highlights";
+import { classifyMentionContext, findTermMentions } from "../../src/lib/care-note/keyword-highlights";
 import type { HandoverRunResult } from "../../src/lib/agent/handover/agent";
 import { SEVERITY_RANK, type SummaryItemInput } from "../../src/lib/agent/handover/schema";
 import { containsNormalized, normalizeForMatch } from "../../src/lib/agent/shared/text";
@@ -23,7 +23,7 @@ import type { MaterializedCase } from "./fixtures";
  *   REFUSAL            the model declined
  */
 
-export const GRADER_VERSION = "2026-11-21.1";
+export const GRADER_VERSION = "2026-11-21.2";
 
 export const FAILURE_CLASSES = [
   "TOOL_MISUSE",
@@ -92,7 +92,13 @@ export function assertsFinding(item: SummaryItemInput, terms: string[]): boolean
   if (!found) {
     return false;
   }
-  if (classifyMentionContext(item.statement, found.start) !== "AFFIRMED") {
+  // Same call as the engine: other lexicon mentions in the sentence are passed as spans, so a list such
+  // as "denies chest pain, shortness of breath, fever" keeps "fever" inside the negation window
+  // (grader 2026-11-21.1 omitted them and scored pertinent negatives as assertions).
+  const otherSpans = findTermMentions(item.statement)
+    .filter((mention) => mention.startOffset !== found.start)
+    .map((mention) => [mention.startOffset, mention.endOffset] as [number, number]);
+  if (classifyMentionContext(item.statement, found.start, otherSpans) !== "AFFIRMED") {
     return false;
   }
   return item.severity !== "info" || ASSERTIVE_CATEGORIES.has(item.category);

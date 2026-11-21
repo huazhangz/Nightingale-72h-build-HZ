@@ -105,7 +105,25 @@ Each run directory holds `config.json` (grader version, case-set hash, prompt ha
 
 ## 7. Model results
 
-Not yet run: the live comparison of `handover-v1` and `handover-v2` on `claude-opus-5-5` needs an API key and spending approval. At 20 cases × 5 reps × 2 prompts (200 runs) the pre-flight estimate is about $36. The report will add the paired v1-vs-v2 comparison with its minimum detectable effect.
+### 7.1 Gemini 2.5 Flash (2026-11-21, live)
+
+20 cases × 3 reps × 2 prompts = 120 runs through the Gemini transport (OpenAI-compatible endpoint), grader `2026-11-21.2`. Full report: [docs/eval/2026-11-21-handover-gemini-2.5-flash.md](./eval/2026-11-21-handover-gemini-2.5-flash.md). These are Gemini results; the prompts were written for Claude.
+
+| Prompt | pass@1 [95% CI] | pass@3 | pass^3 | FABRICATION | OMISSION | TOOL_MISUSE | LEAKAGE | false assertions / run | citation validity | $ / run |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `handover-v1` | 60.0% [41.3, 78.7] | 80.0% | 40.0% | 21.7% | 11.7% | 8.3% | 0 | 0.30 | 96.9% | $0.0074 |
+| `handover-v2` | **80.0%** [63.7, 96.3] | 90.0% | **70.0%** | 16.7% | 3.3% | 0.0% | 0 | **0.00** | 95.6% | $0.0073 |
+
+- **v2 − v1 = +20.0 points** (bootstrap CI [1.7, 38.3]; paired t p = 0.049; sign-flip permutation p = 0.072; MDE 28.0 points). Read as a likely improvement that 20 cases cannot confirm at the permutation test's 5% level.
+- v2 passes **every adversarial case on every attempt** (30/30: prompt injection, cross-patient and staff-draft isolation, empty record, denied and advice-only red flags, follow-up both ways, superseded readings, hypoxia) and makes no false assertions; its remaining failures are on the long seeded notes.
+- **What still fails is quoting.** Every remaining v2 FABRICATION is a citation the guardrail could not verify: quotes stitched from non-adjacent sentences without an ellipsis, and a token glitch ("from1" for "from"). The guardrail rejected them, so a clinician never sees them, but they show where a prompt or model change should aim.
+- Zero leakage in 120 runs; no refusals, no infrastructure errors; median 13–15 s per run.
+
+**Grader fix found by this run.** The first scoring (grader `2026-11-21.1`) counted "Patient denies chest pain, shortness of breath, fever, or nausea" as an assertion of fever: the grader called the NegEx context classifier without the spans of the other list items, so multi-word items filled the five-word window and "denies" fell out of it. The engine and the production guardrails were not affected (they pass the spans). Fixed in `2026-11-21.2` with a regression test; the run was re-scored offline from its transcripts (`npm run eval:regrade`, 3 of 120 trials changed, no model calls), and the offline baselines are unchanged under the new grader.
+
+### 7.2 Claude
+
+Not yet run: needs an Anthropic API key. At 20 cases × 5 reps × 2 prompts on `claude-opus-5-5` the pre-flight estimate is about $36.
 
 ## 8. Limits
 

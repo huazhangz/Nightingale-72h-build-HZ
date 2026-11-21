@@ -58,6 +58,13 @@ describe("false-assertion grader", () => {
     expect(assertsFinding(item("Red flags discussed: chest pain at rest.", "warning"), ["chest pain"])).toBe(false);
     expect(assertsFinding(item("Chest pain safety-netting documented.", "info", "plan"), ["chest pain"])).toBe(false);
   });
+
+  it("keeps a negated list item negated however long the list (found in the live Gemini run)", () => {
+    // Multi-word list items used to fill the five-word window, so "fever" escaped "denies".
+    expect(assertsFinding(item("Patient denies chest pain, shortness of breath, fever, or nausea.", "warning"), ["fever"])).toBe(false);
+    expect(assertsFinding(item("Patient reported no chest pain, shortness of breath, fever, or nausea, with a blood pressure of 124/78.", "warning"), ["fever"])).toBe(false);
+    expect(assertsFinding(item("Denies chest pain; new fever of 39.2 today.", "warning"), ["fever"])).toBe(true);
+  });
 });
 
 describe("evaluation pipeline (offline baselines)", () => {

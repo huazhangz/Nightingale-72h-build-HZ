@@ -1,6 +1,6 @@
 # Handover agent evaluation report
 
-Grader `2026-11-21.1` · case set `f6a3adc3590b` (20 cases) · generated 2026-11-21T14:30:20.398Z
+Grader `2026-11-21.2` · case set `f6a3adc3590b` (20 cases) · generated 2026-11-21T20:03:53.452Z
 
 | Variant | Kind | Model | Prompt |
 | --- | --- | --- | --- |
