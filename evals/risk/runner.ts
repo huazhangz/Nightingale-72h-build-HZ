@@ -194,7 +194,7 @@ export async function runRiskTrial({ variant, item, rep }: Trial, options: { kee
     const run = done.agentRunId ? await prisma.agentRun.findUnique({ where: { id: done.agentRunId } }) : null;
     if (run?.outcome && (INFRASTRUCTURE_OUTCOMES as ReadonlySet<string>).has(run.outcome)) {
       // Infrastructure failures are retried on the next invocation, never scored as model errors.
-      return fail(run.outcome, run.errorKind ?? "infrastructure failure");
+      return fail(run.outcome, [run.errorKind, (agentRun as RunAgentResult | null)?.error?.message].filter(Boolean).join(": ") || "infrastructure failure");
     }
     const live = variant.kind === "anthropic" || variant.kind === "gemini";
     if (live && run?.servedModel && !run.fallbackUsed && !servedAsRequested(variant.model, run.servedModel)) {

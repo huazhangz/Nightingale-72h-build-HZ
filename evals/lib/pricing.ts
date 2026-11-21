@@ -18,7 +18,10 @@ const PRICES: Record<string, { input: number; output: number; cacheRead: number;
   // environment. Flash-Lite listings disagree ($0.05/$0.20 vs $0.10/$0.40); the higher is used so the
   // spend cap stays conservative. A free tier costs nothing, so measured spend is an upper bound.
   "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.3 },
+  // 2.5 Flash-Lite answers 404 "no longer available to new users" (checked 2026-11-21); its successor 3.5 Flash-Lite is
+  // listed at the same standard price as 2.5 Flash.
   "gemini-2.5-flash-lite": { input: 0.1, output: 0.4, cacheRead: 0.025, cacheWrite: 0.1 },
+  "gemini-3.5-flash-lite": { input: 0.3, output: 2.5, cacheRead: 0.03, cacheWrite: 0.3 },
 };
 
 const OFFLINE = new Set(["simulated-rule-policy", "oracle-baseline", "null-baseline", "scripted-model"]);

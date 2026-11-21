@@ -64,7 +64,7 @@ async function main(): Promise<number> {
     oracle: { id: "oracle", kind: "oracle", model: "oracle-baseline" },
     claude: { id: "claude", kind: "anthropic", model, effort },
     gemini: { id: "gemini", kind: "gemini", model: values["gemini-model"]! },
-    "gemini-lite": { id: "gemini-lite", kind: "gemini", model: "gemini-2.5-flash-lite" },
+    "gemini-lite": { id: "gemini-lite", kind: "gemini", model: "gemini-3.5-flash-lite" },
   };
   const variants = values.variants!.split(",").map((name) => {
     const preset = presets[name.trim()];
