@@ -21,7 +21,8 @@
     "eval:risk": "tsx --conditions=react-server evals/risk/run.ts",
     "eval:risk:smoke": "tsx --conditions=react-server evals/risk/run.ts --variants rules,simulated,oracle --reps 1 --out evals/results/risk-smoke --assert-baselines",
     "agent:live-check": "tsx --conditions=react-server scripts/agent-live-check.ts",
-    "eval:regrade": "tsx --conditions=react-server evals/regrade.ts"
+    "eval:regrade": "tsx --conditions=react-server evals/regrade.ts",
+    "admin:create": "tsx --conditions=react-server scripts/create-admin.ts"
   },
   "prisma": {
     "seed": "tsx --conditions=react-server prisma/seed.ts"

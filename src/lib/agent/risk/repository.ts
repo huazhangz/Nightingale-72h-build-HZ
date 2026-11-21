@@ -193,10 +193,12 @@ export async function listWorklist(actor: Actor): Promise<WorklistRow[]> {
       name: true,
       patientEntries: { select: { encounterAt: true }, orderBy: { encounterAt: "desc" }, take: 1 },
       _count: { select: { patientEntries: true } },
+      // Only the columns the row needs: drivers, floor reasons and guardrail JSON stay in the database.
       riskAssessments: {
         where: { status: { in: ["COMPLETED", "PENDING", "RUNNING"] } },
         orderBy: { createdAt: "desc" },
         take: 5,
+        select: { status: true, finalLevel: true, overrideLevel: true, review: true, method: true, completedAt: true },
       },
     },
   });

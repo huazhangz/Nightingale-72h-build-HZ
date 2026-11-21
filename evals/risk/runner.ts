@@ -7,7 +7,7 @@ import { assistantMessage, scriptedFetch, toolUseBlock, type Responder } from ".
 import { INFRASTRUCTURE_OUTCOMES, type Effort, type UsageTotals } from "../../src/lib/agent/core/types";
 import { runRiskAssessment } from "../../src/lib/agent/risk/assess";
 import { REVIEW_FOR_LEVEL, type RiskLevel } from "../../src/lib/agent/risk/levels";
-import { riskPromptHash, RISK_PROMPT_VERSION } from "../../src/lib/agent/risk/prompts";
+import { riskPromptHash, RISK_PROMPT_VERSION, type RiskPromptVersion } from "../../src/lib/agent/risk/prompts";
 import { enqueueRiskAssessment } from "../../src/lib/agent/risk/queue";
 import type { RiskGuardrailReport } from "../../src/lib/agent/risk/schema";
 import { simulatedRiskResponder } from "../../src/lib/agent/risk/simulated";
@@ -24,7 +24,7 @@ import { riskCaseSetHash, type RiskCase } from "./cases";
 
 export type RiskVariantKind = "rules" | "simulated" | "oracle" | "anthropic" | "gemini";
 
-export type RiskVariant = { id: string; kind: RiskVariantKind; model: string; effort?: Effort };
+export type RiskVariant = { id: string; kind: RiskVariantKind; model: string; effort?: Effort; promptVersion?: RiskPromptVersion };
 
 export type RiskRow = {
   variant: string;
@@ -168,6 +168,7 @@ export async function runRiskTrial({ variant, item, rep }: Trial, options: { kee
       // Server-side refusal fallback is an Anthropic feature; other transports get none.
       settings: { model: variant.model, effort: variant.effort ?? "medium", ...(variant.kind === "anthropic" ? {} : { fallbacks: null }) },
       now: EVAL_NOW,
+      ...(variant.promptVersion ? { promptVersion: variant.promptVersion } : {}),
       onRun: (run) => {
         agentRun = run;
       },
@@ -232,7 +233,7 @@ export async function runRiskTrial({ variant, item, rep }: Trial, options: { kee
         steps: run?.steps ?? 0,
         requestedModel: variant.model,
         servedModel: run?.servedModel ?? null,
-        promptHash: riskPromptHash(),
+        promptHash: riskPromptHash(variant.promptVersion ?? RISK_PROMPT_VERSION),
         startedAt: startedAt.toISOString(),
       },
       transcript: transcript(),
@@ -283,7 +284,15 @@ export async function runRiskEvaluation(config: {
   const log = config.log ?? ((line: string) => console.log(line));
   mkdirSync(config.outDir, { recursive: true });
   const configFile = path.join(config.outDir, "config.json");
-  const identity = { caseSetHash: riskCaseSetHash(config.cases), promptVersion: RISK_PROMPT_VERSION, promptHash: riskPromptHash() };
+  // Prompts are per variant (recorded on every row); a directory is tied to one case set and one
+  // set of variant -> prompt bindings.
+  const promptsByVariant = Object.fromEntries(
+    config.variants.map((variant) => {
+      const version = variant.promptVersion ?? RISK_PROMPT_VERSION;
+      return [variant.id, `${version}:${riskPromptHash(version)}`];
+    }),
+  );
+  const identity = { caseSetHash: riskCaseSetHash(config.cases), prompts: JSON.stringify(promptsByVariant) };
   if (existsSync(configFile)) {
     const previous = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     for (const [key, value] of Object.entries(identity)) {

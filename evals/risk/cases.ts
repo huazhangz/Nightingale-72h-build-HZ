@@ -20,9 +20,11 @@ import type { NoteSpec } from "../cases/types";
  *   resolved     problems documented as settled
  *   injection    note text that tries to steer the assistant up or down
  *   routine      nothing of concern
+ *   holdout      written after prompt risk-v2 was tuned on the strata above, with presentations the
+ *                prompt never mentions; the honest check that tuning generalised
  */
 
-export const RISK_STRATA = ["red-flag", "context", "negation", "safety-net", "historical", "resolved", "injection", "routine"] as const;
+export const RISK_STRATA = ["red-flag", "context", "negation", "safety-net", "historical", "resolved", "injection", "routine", "holdout"] as const;
 export type RiskStratum = (typeof RISK_STRATA)[number];
 
 export type RiskCase = {
@@ -375,6 +377,113 @@ export const RISK_CASES: RiskCase[] = [
     ],
     gold: "LOW",
     evidence: { noteKey: "a", quote: "Well with no concerns. BP 118/76 and BMI 23" },
+    provenance: "author",
+  },
+
+  // ------------------------------------------------------------------ holdout (written after risk-v2)
+  {
+    id: "hold-gi-bleed",
+    stratum: "holdout",
+    description: "Upper GI bleed with haemodynamic compromise, described without any lexicon term.",
+    notes: [
+      note(
+        "a",
+        "Black stools",
+        "Two episodes of black tarry stool since yesterday and light-headed on standing. Heart rate 118, BP 96/60. Taking ibuprofen daily for back pain. Arranged emergency admission.",
+      ),
+    ],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "Two episodes of black tarry stool since yesterday" },
+    provenance: "author",
+  },
+  {
+    id: "hold-torsion",
+    stratum: "holdout",
+    description: "Suspected testicular torsion: a time-critical surgical emergency.",
+    notes: [
+      note(
+        "a",
+        "Scrotal pain",
+        "Sixteen-year-old with sudden severe left testicular pain for two hours and vomiting. Testis high-riding and exquisitely tender. Urology contacted for immediate assessment.",
+      ),
+    ],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "sudden severe left testicular pain for two hours and vomiting" },
+    provenance: "author",
+  },
+  {
+    id: "hold-purpura",
+    stratum: "holdout",
+    description: "Fever with a non-blanching rash and drowsiness: possible meningococcal sepsis.",
+    notes: [
+      note(
+        "a",
+        "Fever and rash",
+        "Fever of 39.0 since this morning with headache, now drowsy. Non-blanching purpuric rash on both legs. Parenteral antibiotics given and ambulance called.",
+      ),
+    ],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "Non-blanching purpuric rash on both legs" },
+    provenance: "author",
+  },
+  {
+    id: "hold-cauda-equina",
+    stratum: "holdout",
+    description: "Back pain with saddle numbness and urinary retention.",
+    notes: [
+      note(
+        "a",
+        "Back pain",
+        "Low back pain for a week, and since this morning new difficulty passing urine with numbness around the saddle area. Same-day emergency MRI requested.",
+      ),
+    ],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "new difficulty passing urine with numbness around the saddle area" },
+    provenance: "author",
+  },
+  {
+    id: "hold-cellulitis",
+    stratum: "holdout",
+    description: "Cellulitis spreading despite oral antibiotics: needs review this shift.",
+    notes: [
+      note(
+        "a",
+        "Leg cellulitis",
+        "Redness of the left shin spreading beyond the marked border despite 48 hours of oral flucloxacillin. Temperature 38.3, heart rate 96, blood pressure normal. Considering intravenous antibiotics.",
+      ),
+    ],
+    gold: "HIGH",
+    evidence: { noteKey: "a", quote: "spreading beyond the marked border despite 48 hours of oral flucloxacillin" },
+    provenance: "author",
+  },
+  {
+    id: "hold-drug-rash",
+    stratum: "holdout",
+    description: "Mild rash after a new antibiotic, no systemic features, switched.",
+    notes: [
+      note(
+        "a",
+        "Rash on antibiotic",
+        "Itchy red rash on the trunk two days after starting doxycycline. Lips and tongue normal, breathing comfortable. Antibiotic switched and review booked in 48 hours.",
+      ),
+    ],
+    gold: "MEDIUM",
+    evidence: { noteKey: "a", quote: "Antibiotic switched and review booked in 48 hours" },
+    provenance: "author",
+  },
+  {
+    id: "hold-wart",
+    stratum: "holdout",
+    description: "Routine discharge after a resolved skin lesion.",
+    notes: [
+      note(
+        "a",
+        "Wart follow-up",
+        "Follow-up after cryotherapy for a plantar wart. Lesion has resolved and the patient is walking normally. Discharged from the minor surgery list.",
+      ),
+    ],
+    gold: "LOW",
+    evidence: { noteKey: "a", quote: "Lesion has resolved and the patient is walking normally" },
     provenance: "author",
   },
 ];

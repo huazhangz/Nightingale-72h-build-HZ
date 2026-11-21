@@ -378,6 +378,7 @@ model RiskAssessment {
   completedAt    DateTime?
 
   @@index([patientId, createdAt])
+  @@index([patientId, status, createdAt])
   @@index([status, createdAt])
   @@index([clinicId, status])
 }

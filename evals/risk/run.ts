@@ -64,6 +64,8 @@ async function main(): Promise<number> {
     oracle: { id: "oracle", kind: "oracle", model: "oracle-baseline" },
     claude: { id: "claude", kind: "anthropic", model, effort },
     gemini: { id: "gemini", kind: "gemini", model: values["gemini-model"]! },
+    "gemini-risk-v1": { id: "gemini-risk-v1", kind: "gemini", model: values["gemini-model"]!, promptVersion: "risk-v1" },
+    "gemini-risk-v2": { id: "gemini-risk-v2", kind: "gemini", model: values["gemini-model"]!, promptVersion: "risk-v2" },
     "gemini-lite": { id: "gemini-lite", kind: "gemini", model: "gemini-3.5-flash-lite" },
   };
   const variants = values.variants!.split(",").map((name) => {

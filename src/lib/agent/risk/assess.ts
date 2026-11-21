@@ -9,7 +9,7 @@ import { executeAgent, failAgentRun, finishAgentRun } from "../shared/execute";
 import { createRecordContext, type ClinicalTimelineEntry } from "../shared/record-context";
 import { computeRiskFloor } from "./floor";
 import { applyRiskGuardrails, ruleBasedAssessment } from "./guardrails";
-import { RISK_PROMPT_VERSION, riskPromptHash, riskSystemPrompt, riskUserMessage } from "./prompts";
+import { isRiskPromptVersion, RISK_PROMPT_VERSION, riskPromptHash, riskSystemPrompt, riskUserMessage, type RiskPromptVersion } from "./prompts";
 import { RiskSubmission, type RiskResult } from "./schema";
 import { simulatedRiskResponder } from "./simulated";
 import { RISK_TOOLS } from "./tools";
@@ -70,6 +70,8 @@ export type RunRiskOptions = {
   /** Skip the model even when configured (seed data, emergency kill switch). */
   rulesOnly?: boolean;
   now?: Date;
+  /** Prompt version (default: NIGHTINGALE_RISK_PROMPT if valid, else the current default). */
+  promptVersion?: RiskPromptVersion;
   /** Evaluation-only: receives the full agent run (messages, trace, submission) for transcripts. */
   onRun?: (run: RunAgentResult) => void;
 };
@@ -109,6 +111,8 @@ export async function runRiskAssessment(assessmentId: string, options: RunRiskOp
     }
 
     const floor = computeRiskFloor(timeline);
+    const envPrompt = process.env.NIGHTINGALE_RISK_PROMPT;
+    const promptVersion: RiskPromptVersion = options.promptVersion ?? (isRiskPromptVersion(envPrompt) ? envPrompt : RISK_PROMPT_VERSION);
     const settings = { ...agentSettingsFromEnv(), ...options.settings };
     const useModel = !options.rulesOnly && (options.clientFactory !== undefined || isAgentAvailable(settings));
     let result: RiskResult;
@@ -119,12 +123,12 @@ export async function runRiskAssessment(assessmentId: string, options: RunRiskOp
         clinicId: row.clinicId,
         patientId: row.patientId,
         actor,
-        promptVersion: RISK_PROMPT_VERSION,
-        promptHash: riskPromptHash(),
+        promptVersion,
+        promptHash: riskPromptHash(promptVersion),
         clientFactory,
         config: {
           model: settings.model,
-          system: riskSystemPrompt(),
+          system: riskSystemPrompt(promptVersion),
           maxIterations: Math.min(settings.maxIterations, RISK_MAX_ITERATIONS),
           maxTokens: settings.maxTokens,
           effort: settings.effort,

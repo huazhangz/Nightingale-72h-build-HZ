@@ -29,6 +29,22 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = basePrisma;
 }
 
+/**
+ * SQLite tuning, once per process: write-ahead logging lets page reads proceed while the background
+ * risk worker writes (the default rollback journal blocks readers), and a busy timeout makes a
+ * writer wait for a lock instead of failing with SQLITE_BUSY. journal_mode is persistent in the
+ * database file; the pragmas return rows, hence $queryRawUnsafe.
+ */
+const globalForPragmas = globalThis as unknown as { nightingalePragmas?: Promise<void> };
+globalForPragmas.nightingalePragmas ??= (async () => {
+  try {
+    await basePrisma.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
+    await basePrisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");
+  } catch {
+    // Not fatal: the database works in its default journal mode.
+  }
+})();
+
 function invalidatePatientCache(patientId: string | undefined): void {
   if (patientId) {
     invalidateGlanceCache(patientId);

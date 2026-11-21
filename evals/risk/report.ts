@@ -135,7 +135,7 @@ export function writeRiskReport(
 
   lines.push("# Risk triage evaluation", "");
   lines.push(
-    `Case set \`${String(config.caseSetHash)}\` · prompt \`${String(config.promptVersion)}\` (\`${String(config.promptHash)}\`) · ${cases.length} cases (${goldCounts}) · ${String(config.reps)} rep(s) · evaluation date ${String(config.evalNow ?? "")}`,
+    `Case set \`${String(config.caseSetHash)}\` · prompts ${config.prompts ? `\`${String(config.prompts)}\`` : `\`${String(config.promptVersion)}\` (\`${String(config.promptHash)}\`)`} · ${cases.length} cases (${goldCounts}) · ${String(config.reps)} rep(s) · evaluation date ${String(config.evalNow ?? "")}`,
     "",
     "> Gold levels are hand-labelled by the project author from the note text. They are **not clinician-verified**; treat",
     "> absolute numbers as a regression signal for this harness, not as clinical performance.",
