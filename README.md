@@ -76,7 +76,7 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
-**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21): after one round of prompt optimisation, the risk agent (`risk-v2`) rates 96.4% of 84 trials at the exact level with **no under-triage**, including 7 holdout cases written after the tuning (rule floor alone: 46.4% exact, 50% under-triage). The handover prompt went from 80% (v2) to the results in [EVALUATION.md](./docs/EVALUATION.md) §7.3, with zero leakage throughout. Claude runs are pending an Anthropic key.
+**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21): after one round of prompt optimisation, the risk agent (`risk-v2`) rates 96.4% of 84 trials at the exact level with **no under-triage**, including 7 holdout cases written after the tuning (rule floor alone: 46.4% exact, 50% under-triage). The handover agent (`handover-v4`) passes about 82% of runs, with full coverage of required facts in most runs, no false assertions and zero leakage; its remaining failures are quotes the citation guardrail rejects ([EVALUATION.md](./docs/EVALUATION.md) §7.3). Claude runs are pending an Anthropic key.
 
 ---
 
@@ -111,7 +111,7 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    npx vitest run
    ```
 
-   **198 / 198** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **200 / 200** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
@@ -162,7 +162,7 @@ Re-running it for the same email resets the password, re-activates the account a
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 198 / 198 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 200 / 200 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -311,7 +311,7 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **198 / 198** passing |
+| `npm run test` or `npx vitest run` | **200 / 200** passing |
 | `npm run typecheck` | 0 errors |
 | `npm run build` | passes |
 | `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |

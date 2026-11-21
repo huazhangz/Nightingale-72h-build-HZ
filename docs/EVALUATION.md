@@ -121,6 +121,26 @@ Each run directory holds `config.json` (grader version, case-set hash, prompt ha
 
 **Grader fix found by this run.** The first scoring (grader `2026-11-21.1`) counted "Patient denies chest pain, shortness of breath, fever, or nausea" as an assertion of fever: the grader called the NegEx context classifier without the spans of the other list items, so multi-word items filled the five-word window and "denies" fell out of it. The engine and the production guardrails were not affected (they pass the spans). Fixed in `2026-11-21.2` with a regression test; the run was re-scored offline from its transcripts (`npm run eval:regrade`, 3 of 120 trials changed, no model calls), and the offline baselines are unchanged under the new grader.
 
+### 7.3 Prompt optimisation: handover-v2 → v3 → v4 (2026-11-21)
+
+Each version targets failures seen in the previous run (src/lib/agent/handover/prompts.ts): **v3** spells out contiguous verbatim quoting with a self-check and adds a must-include list (suicide / self-harm screens including negative ones, safeguarding, allergies, pending results, medication changes); **v4** adds one rule after v3 filed safety-net advice as warning/critical plan items: advice is always `plan` / `info`. Same 20 cases × 3 reps on `gemini-2.5-flash`, grader `2026-11-21.2`. Reports: [v2 vs v3](./eval/2026-11-21-handover-prompt-v2-v3.md), [v4](./eval/2026-11-21-handover-prompt-v4.md).
+
+| Prompt (run) | pass@1 | pass@3 | pass^3 | required-fact coverage | false assertions / run | FABRICATION | OMISSION | NO_SUBMISSION | LEAKAGE | $ / run |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| v2 (§7.1 run) | 80.0% | 90.0% | 70.0% | 98.6% | 0.00 | 16.7% | 3.3% | 0.0% | 0 | $0.0073 |
+| v2 (A/B run) | 75.0% | 95.0% | 50.0% | 90.8% | 0.00 | 16.7% | 6.7% | 5.0% | 0 | $0.0072 |
+| v3 | 81.7% | 100% | 65.0% | **100%** | 0.13 | 18.3% | **0.0%** | 0.0% | 0 | $0.0084 |
+| **v4** (default) | 81.7% | 95.0% | 60.0% | 95.0% | **0.00** | **15.0%** | 1.7% | 3.3% | 0 | $0.0084 |
+
+How to read it:
+
+- **v2 itself moved 5 points between two identical runs** (80.0% → 75.0%). Differences of that size are run-to-run noise at 20 cases × 3 reps; the paired v3 − v2 difference in the A/B run was +6.7 points (permutation p = 0.31, MDE 13.6). No overall pass-rate gain is claimed.
+- **What the changes did fix, measurably:** the targeted failure classes. v3 brought required-fact coverage to 100% and omissions to zero (the missed suicide-risk screen); v4 removed the false assertions v3 introduced (advice presented as a problem) while keeping coverage at 95% and adversarial cases at 29/30.
+- **What is left is quoting.** 9 of v4's 11 failing runs have a citation the guardrail could not verify (stitched or slightly altered quotes). Clinicians never see those items (they are rejected), so this costs completeness, not safety. Further gains here are more likely from a stronger model than from more prompt text.
+- **v4 is the default**; v1–v3 stay selectable for regression runs.
+
+Total live spend for every Gemini run on 2026-11-21 (live checks, both evaluations, two optimisation rounds): **$3.34** under the $4.50 hard cap.
+
 ### 7.2 Claude
 
 Not yet run: needs an Anthropic API key. At 20 cases × 5 reps × 2 prompts on `claude-opus-5-5` the pre-flight estimate is about $36.
@@ -177,7 +197,7 @@ Every row is also checked against two invariants, whatever the variant: the fina
 
 ## B4. Offline baselines (run in CI)
 
-`npm run eval:risk:smoke`: 21 cases × 1 rep, no API key.
+`npm run eval:risk:smoke`: 21 cases × 1 rep, no API key (table below). Since the 7 holdout cases were added (B4c) the smoke runs 28 cases: rules 46.4% exact, 50.0% under-triage; the oracle still matches gold on every case.
 
 | Variant | exact | under-triage | severe under | over-triage | sens ≥ HIGH | sens CRITICAL | QWK |
 | --- | --- | --- | ---: | ---: | --- | ---: | --- |
