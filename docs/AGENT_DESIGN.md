@@ -1,124 +1,202 @@
-# Handover Agent — Design
+# Agents — Design
 
-**Scope:** the AI handover summary on the Glance page (`src/lib/agent/`), its API, and its safety boundary.
-**Companion documents:** [EVALUATION.md](./EVALUATION.md) (how it is measured), [CLINICAL_HIGHLIGHT_RULES.txt](./CLINICAL_HIGHLIGHT_RULES.txt) (the rule engine the safety floor relies on), [UPGRADE_PLAN.zh.md](./UPGRADE_PLAN.zh.md) (plan and roadmap mapping).
+**Scope:** the agent platform (`src/lib/agent/core`, `src/lib/agent/shared`) and the two agents built on it: the **risk triage agent** (`src/lib/agent/risk`, the worklist level on every patient) and the **handover agent** (`src/lib/agent/handover`, the AI handover summary on the Glance page).
+**Companion documents:** [EVALUATION.md](./EVALUATION.md) (how both are measured), [SECURITY.md](./SECURITY.md) (auth, sessions, PHI), [API_TESTING.zh.md](./API_TESTING.zh.md) (first live-API session), [CLINICAL_HIGHLIGHT_RULES.txt](./CLINICAL_HIGHLIGHT_RULES.txt) (the rule engine the safety floors use), [UPGRADE_PLAN.zh.md](./UPGRADE_PLAN.zh.md) (review findings, plan, roadmap A1–A6).
 
-A nurse or doctor taking over a patient asks for a handover. An agent reads the record through four tools, drafts a summary in which every line quotes its source note, may propose follow-up tasks, and submits. Deterministic code then verifies every citation, enforces the critical-finding floor and re-redacts the output before anyone sees it.
+Both agents follow one pattern: **the model reads the record through narrow, patient-bound tools and submits a structured answer; deterministic code then verifies every citation and applies a safety floor the model cannot lower.** The model adds judgement; it never removes a safety property.
 
 ---
 
-## 1. Request path
+## 1. Platform
 
 ```
-HandoverPanel (Glance)                                   evals/run.ts
-  POST /api/patients/:id/handover                               │
-        │ signed session → actor; rate limit (6 / 10 min / actor) │
-        ▼                                                         ▼
-  runHandoverAgent(actor, patientId, options)   ← the single entry point for production AND evaluation
-        │ 1. RBAC: STAFF / CLINICIAN / ADMIN only; patient must be in the actor's clinic
-        │ 2. AgentRun row (RUNNING)
-        ▼
-  runAgentLoop()  src/lib/agent/runtime/loop.ts — hand-written, no framework
-        │  model.createMessage(tools + cached system + messages)  ── retries with jittered backoff
-        │  stop_reason: tool_use → validate (zod) → execute → ONE user message of tool_results
-        │               end_turn → one nudge → NO_SUBMISSION
-        │               max_tokens / refusal / pause_turn handled explicitly
-        │  limits: max steps · cumulative token budget · wall-clock deadline · caller abort
-        ▼
-  submit_handover_summary (terminal tool, strict schema)
-        ▼
-  applyGuardrails()  src/lib/agent/handover/guardrails.ts
-        ▼
-  AgentRun row (SUCCEEDED/FAILED, usage, metadata-only trace, summary, guardrail report)
-  AgentFollowupProposal rows (only for a successful run) · AuditLog (no PHI)
+                 ┌──────────────────────── src/lib/agent/core ────────────────────────┐
+  agent code ──▶ │ runToolAgent()  on client.beta.messages.toolRunner (Anthropic SDK)  │
+                 │   · strict zod tools (defineTool / bindTools)   · terminal tool       │
+                 │   · iteration, token and deadline budgets       · one nudge           │
+                 │   · outcome taxonomy, metadata-only trace       · SDK retries (3)     │
+                 └────────────────────────────────────────────────────────────────────┘
+                 ┌──────────────────────── src/lib/agent/shared ──────────────────────┐
+                 │ RecordContext (actor + patient bound)  · record tools (glance,      │
+                 │ timeline, notes) · EvidenceLedger · citation verification ·          │
+                 │ injection tripwire · executeAgent() (AgentRun rows, client factory) │
+                 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## 2. The loop (roadmap project 1)
+### 1.1 The run (`runToolAgent`)
 
-`runAgentLoop` is the classic tool-calling cycle written out by hand so every decision is visible and testable:
+The Anthropic SDK's Tool Runner owns the request → tool calls → tool results cycle and HTTP retries. `runToolAgent` wraps it and decides only **when to stop**, which is where clinical software needs to be strict:
 
 | Concern | Behaviour |
 | --- | --- |
-| Tool offer | Tool definitions are generated from zod schemas through the SDK's JSON-schema transform and sent with `strict: true`, in a fixed order (they are part of the cached prefix). |
-| Validation | The model's arguments are untrusted output: every input is `safeParse`d before execution; failures go back as `is_error` results the model can correct. |
-| Execution | Read tools in one turn run concurrently; write tools run after them, sequentially, in call order. All results return in **one** user message, in the order the model emitted the calls. |
-| Terminal tool | `submit_handover_summary` ends the run. It is accepted only when called **alone**: a submission written in the same turn as other calls was composed before their results existed. |
-| Stop conditions | `SUBMITTED`, `NO_SUBMISSION` (after one nudge), `STEP_LIMIT`, `BUDGET_EXCEEDED`, `DEADLINE`, `REFUSED`, `TRUNCATED`, `MODEL_ERROR`, `ABORTED`, `HARNESS_ERROR` — each a distinct outcome so the evaluation can separate model behaviour from plumbing. |
-| Truncation | A turn that stops at `max_tokens` never executes its tools (a cut-off tool input can parse as a valid partial object). |
-| Retries | The SDK's own retries are disabled (`maxRetries: 0`); the loop retries 408/409/429/5xx/529 and connection errors with full-jitter exponential backoff, honours `retry-after`, fails fast on other 4xx, and records every attempt in the trace. Backoff sleeps are cancelled by the deadline. |
-| History | Assistant turns are appended verbatim (thinking blocks included); the harness is append-only. |
-| Caching | The system prompt carries a cache breakpoint (tools + system are the stable prefix) and top-level automatic caching covers the growing conversation. Prompts contain no dates or ids; per-run facts go in the first user message. |
-| Model settings | Default `claude-opus-5-5`, `effort: medium`, server-side refusal fallback `fallbacks: "default"`; all configurable (`NIGHTINGALE_AGENT_*`). Opus 5.5 rejects forced `tool_choice`, so the terminal call is requested in the prompt and enforced by the nudge + `NO_SUBMISSION` outcome. |
+| Tools | Defined once as zod schemas (`defineTool`), converted with the SDK's JSON-schema transform and sent with `strict: true`, in a fixed order (part of the cached prefix). Inputs are `safeParse`d again before execution; failures return as `is_error` results the model can correct (`INVALID_INPUT`). |
+| Tool errors | Exceptions inside a tool never reach the model as raw text (the SDK would forward `Error: <message>`). They are wrapped in `ToolError` with a code and a safe message: tools raise `ToolInputError` for expected conditions (`INVALID_DATE`, `TOO_MANY_PROPOSALS`, `RESULT_TOO_LARGE`, …); anything else becomes `TOOL_FAILED` / "The tool failed unexpectedly." |
+| Terminal tool | Each agent has one terminal tool (`submit_risk_assessment`, `submit_handover_summary`). It is accepted only when called **alone** and with valid input; the run ends before the runner executes anything, so the terminal tool is never "run". A submission written next to other calls was composed before their results existed and is refused (`TERMINAL_NOT_ALONE`). |
+| Stop conditions | `SUBMITTED`, `NO_SUBMISSION` (after one reminder), `STEP_LIMIT`, `BUDGET_EXCEEDED`, `DEADLINE`, `REFUSED`, `TRUNCATED`, `MODEL_ERROR` (with kind: `rate_limit`, `overloaded`, `auth`, `bad_request`, `server`, `connection`, …), `ABORTED`, `HARNESS_ERROR`. Infrastructure outcomes are kept apart from model behaviour so the evaluation never scores an outage as a wrong answer. |
+| Truncation | A turn that stops at `max_tokens` ends the run before its tools execute (a cut-off tool input can parse as a valid partial object). |
+| Retries | SDK-managed (`maxRetries: 3`, exponential backoff, `retry-after` honoured). The client's transport is wrapped to record every retried HTTP status as an `http_retry` trace event. |
+| Data handling | `thread: false`: the full history is sent each turn and no server-side message thread is kept, which fits zero-data-retention arrangements. Server-side refusal fallback (`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`) is on by default and recorded per turn. |
+| Caching | System prompt with a cache breakpoint plus top-level automatic caching for the growing conversation. Prompts are static per version (no dates or ids); per-run facts go in the first user message. |
+| Trace | Per turn: latency (tool time excluded), stop reason, requested and served model, fallback flag, token usage. Per tool call: name, ok/error code, duration, input/output **sizes**. Never payloads, so the trace holds no PHI. |
 
-Why a hand-written loop rather than the SDK tool runner or Managed Agents: the loop must interleave run-specific state (the evidence ledger, the terminal-tool rule, budgets, a metadata-only trace) with every step, and the clinical data must stay on infrastructure the clinic controls. Managed Agents is not currently covered by ZDR/HIPAA arrangements, which rules it out for PHI.
+Why the SDK Tool Runner and not Managed Agents: clinical data must stay on infrastructure the clinic controls and inside the request/response path we can audit, and Managed Agents is not currently covered by ZDR/HIPAA arrangements. The Tool Runner gives the standard agent loop with the policy hooks above.
 
-## 3. Tools and the permission boundary
+### 1.2 Record access (`shared/`)
 
 | Tool | Effect | What the model gets |
 | --- | --- | --- |
 | `get_glance_cards` | read | Highest-risk highlights (with note ids), open and recently resolved actions, consultation stage |
-| `get_timeline` | read | Note metadata only: id, title, time, author role, status, highlight label counts, whether the body is visible to this role |
+| `get_timeline` | read | Note metadata only: id, title, time, author role, status, highlight label counts, whether the body is visible to this actor |
 | `get_notes` | read | Up to 8 notes in full: redacted body, permitted comments, highlights. Unknown and forbidden ids are both reported as `unavailable` (no existence oracle) |
-| `create_followup` | write (proposal) | Drafts a task tied to a note the run has read; de-duplicated against open actions and earlier proposals |
-| `submit_handover_summary` | terminal | Items: category, severity, statement, 1–3 citations (`note_id` + verbatim quote) |
 
-**Capability scoping instead of parameter checks.** The run is bound to one actor and one patient when it starts (`createHandoverContext`). No tool takes a `patient_id`, so a prompt-injected note cannot redirect the agent to another record — there is no interface through which to ask.
+**Capability scoping instead of parameter checks.** A run is bound to one actor and one patient when it starts (`createRecordContext`). No tool takes a `patient_id`, so a prompt-injected note cannot redirect the agent to another record: there is no interface through which to ask. Every read goes through the existing RBAC-checked accessors.
 
-**Delegation, not a service account.** Every read goes through the existing RBAC-checked accessors (`getPatientTimeline`, `getGlanceCard`) with the requesting user as actor. The agent sees exactly what that user may see: a nurse's run receives no body for an unreleased clinician draft and cannot cite it.
+**Evidence ledger.** Every note body the run actually received is recorded. A citation counts only if its note is in the ledger *and* its quote is a verbatim substring of that note's visible text (case-, whitespace- and typography-insensitive; at least two words). A note id is easy to guess; a verbatim quote is not.
 
-**PHI.** Bodies and excerpts are redacted on write and again on read by the existing `redactPhi`; summary statements and quotes are re-redacted by the guardrails. The model receives no patient name. The persisted trace holds tool names, sizes, timings and error codes — never payloads.
+**PHI.** Bodies and excerpts are redacted on write and again on read (`redactPhi`); everything the agents output is re-redacted. The model never receives the patient's name.
 
-**Writes need a human.** `create_followup` never touches the record. Proposals are stored only when the run succeeds and become `CareAction`s only when a clinician presses *Add to actions*, which goes through the same `createPatientAction` path (RBAC, redaction, audit) as a manual entry. A proposal can only be decided by the role that generated the run.
+### 1.3 Persistence and configuration
 
-**Visibility of past runs.** A summary inherits the permissions of the role that produced it (a clinician's summary may quote clinician drafts), so `GET /handover` returns only runs generated by the caller's role in the caller's clinic.
+`executeAgent` creates an `AgentRun` row (agent, actor, prompt version and content hash, requested model), runs the agent and records outcome, served model, fallback, steps, token usage, duration and the trace. `createClientFactory` picks the client: the real API when `ANTHROPIC_API_KEY` is set, the offline policies when `NIGHTINGALE_AGENT_CLIENT=simulated`, and it refuses when neither is available (`AgentNotConfiguredError`). `NIGHTINGALE_AGENTS_ENABLED=false` switches every model call off; rule-based features keep working.
 
-## 4. Guardrails (post-output, deterministic)
+---
 
-Guardrails run on the model's submission after the loop. None of them depends on the prompt.
+## 2. Risk triage agent (roadmap A1)
 
-1. **Citation verification.** A citation is kept only if its note was read in this run *and* its quote is a verbatim substring of that note's visible text (case-, whitespace- and typography-insensitive; `…` joins ordered fragments; at least two words). An item with no surviving citation is rejected (`UNCITED`, `UNKNOWN_NOTE`, `UNREAD_NOTE`, `UNGROUNDED_QUOTE`, `QUOTE_TOO_SHORT`). A note id is easy to guess; a verbatim quote is not.
-2. **Negation conflict.** An item that affirms a red-flag phrase ("shortness of breath at rest") while every mention of that phrase in its own quotes is negated ("denies shortness of breath at rest") is rejected (`NEGATION_CONFLICT`). The same NegEx rules as the highlight engine decide.
-3. **Injected instructions.** Items whose statement or quote carries text addressed to an AI are rejected (`INSTRUCTION_TEXT`); `create_followup` refuses such text too. This is a tripwire, not the defence — the structural controls above are.
-4. **Critical floor — "critical findings are never downgraded".** Every critical-tier highlight visible to the actor must appear as a critical item. If the model covered it at a lower severity, the item is raised and marked *Raised from …*; if the model left it out, a guardrail item is injected and marked *Added by safety rule*. This is the same invariant the feedback-learning module enforces (`weightDeltaForVerdict` never lowers a critical floor), now applied to generated text.
+Every patient on the worklist carries a level (`LOW` / `MEDIUM` / `HIGH` / `CRITICAL`), a review window (`ROUTINE` / `WITHIN_24H` / `WITHIN_4H` / `IMMEDIATE`), and the cited reasons for both. It is computed automatically whenever the record changes.
+
+### 2.1 Lifecycle
+
+```
+note created / edited / reverted, clinician highlight added, "Reassess" (MANUAL), seed
+      │ enqueueRiskAssessment()  — coalesces: at most one PENDING row per patient
+      ▼
+RiskAssessment (PENDING)  ──scheduleRiskDrain(): after() the HTTP response; or POST /api/agent/risk/drain (cron)
+      │ runRiskAssessment(): atomic claim PENDING → RUNNING (no double runs across workers)
+      │ input hash of the visible record: unchanged and not MANUAL → SUPERSEDED (no model call)
+      ▼
+  model available?  ── no ──▶ rule floor only (method "rules")
+      │ yes
+      ▼
+  runToolAgent(risk tools, service account)  ── failed ──▶ rule floor only, run marked FAILED
+      │ SUBMITTED
+      ▼
+  applyRiskGuardrails(): verify drivers · final = max(model, floor) · tighten review · redact
+      ▼
+RiskAssessment (COMPLETED) + AgentRun + AuditLog   ·  errors: back to PENDING, FAILED after 3 attempts
+```
+
+Stale `RUNNING` rows (worker died) return to `PENDING` after 10 minutes. The previous completed assessment stays visible while a new one runs, and the UI says *A new assessment is running…* and polls.
+
+### 2.2 Who the agent is
+
+Triage must not depend on who happened to open the chart, so the agent runs as a per-clinic **service account** with clinician-level visibility (`isServiceAccount`, status `DISABLED`, no usable password: it can never sign in, and it is never shown as anyone's clinician). What viewers see is filtered again: a nurse sees the level and the drivers whose evidence they may open; drivers citing notes they cannot open are counted (`hiddenEvidence`), not shown.
+
+### 2.3 Tools and output
+
+The three read tools of §1.2 and the terminal `submit_risk_assessment`:
+
+```
+level, review, summary (≤ 300 chars), confidence (low|medium|high),
+drivers: 1–6 × { factor, direction: raises|lowers, citations: 1–3 × { note_id, quote } }
+```
+
+The `risk-v1` prompt defines the levels, says to judge the **current** state (latest encounter outweighs older notes; negated, safety-net, historical and resolved mentions are not current findings), and treats note text strictly as data.
+
+### 2.4 The deterministic floor
+
+`computeRiskFloor` reads the same timeline and applies rules to **affirmed** mentions only (the NegEx/ConText engine excludes negated, historical and hypothetical ones), in notes within 7 days of the latest encounter:
+
+| Evidence | Floor |
+| --- | --- |
+| SpO2 < 90%, BP > 180/110, anaphylaxis, severe respiratory distress | CRITICAL |
+| A critical highlight placed by a clinician (human judgement) | HIGH |
+| Chest pain, shortness of breath, hyperpyrexia, fever | MEDIUM |
+
+Lexical red-flag symptoms floor at MEDIUM, not HIGH, by measurement: on the demo notes a HIGH floor put 10 of 10 patients at HIGH (safety-net advice such as "we safety-netted chest pain" slips past NegEx), which makes a worklist useless. Whether such a symptom is HIGH or CRITICAL is the model's judgement, with cited reasons.
+
+### 2.5 Guardrails
+
+1. **Drivers** keep only verified citations; a driver with none is dropped (`UNCITED`, `UNREAD_NOTE`, `UNGROUNDED_QUOTE`, …). A `raises` driver whose own quotes negate its factor is dropped (`NEGATION_CONFLICT`). Drivers carrying text addressed to an AI are dropped (`INSTRUCTION_TEXT`).
+2. **Final level = max(model level, floor).** The floor can raise, never lower. The UI says *Raised from Medium by safety rules*.
+3. **Review window** is never looser than the final level allows (a CRITICAL patient is never "within 24 h").
+4. **Unsupported levels** (above LOW with no surviving driver) are kept, since over-triage is the safe direction, but flagged so the UI says so.
+5. **Summary** is dropped if it carries injected instructions, and re-redacted.
+
+### 2.6 Human control
+
+Clinicians (not nurses) can override the level with a 5–500 character reason; the override is shown with name and time, audited (`RISK_OVERRIDE`), and sorts the worklist. Any clinical role can request a reassessment (rate-limited to 10 per 10 minutes per user).
+
+---
+
+## 3. Handover agent (roadmap A2)
+
+A nurse or doctor taking over a patient asks for a handover. The agent reads the record, drafts a summary in which every line quotes its source note, may propose follow-up tasks, and submits.
+
+### 3.1 Request path
+
+```
+HandoverPanel (Glance)                                   evals/run.ts
+  POST /api/patients/:id/handover                               │
+        │ session → actor; same-origin check; rate limit (6 / 10 min / actor)
+        ▼                                                         ▼
+  runHandoverAgent(actor, patientId, options)   ← one entry point for production AND evaluation
+        │ RBAC: STAFF / CLINICIAN / ADMIN; patient in the actor's clinic
+        ▼
+  executeAgent → runToolAgent(record tools + create_followup + submit_handover_summary)
+        ▼
+  applyGuardrails()  →  AgentRun (summary, guardrail report) · AgentFollowupProposal · AuditLog
+```
+
+**Delegation, not a service account.** Unlike triage, a handover is for one reader, so the agent runs with **that user's** permissions: a nurse's run receives no body for an unreleased clinician draft and cannot cite it. A summary inherits the permissions of the role that produced it, so `GET /handover` returns only runs generated by the caller's role in the caller's clinic.
+
+**Writes need a human.** `create_followup` never touches the record. Proposals are stored only when the run succeeds and become `CareAction`s only when a clinician presses *Add to actions*, through the same RBAC, redaction and audit path as a manual entry.
+
+### 3.2 Guardrails
+
+1. **Citation verification** as in §1.2; an item with no surviving citation is rejected.
+2. **Negation conflict:** an item that affirms a red flag its own quotes only negate is rejected.
+3. **Injected instructions** in statements or quotes are rejected; `create_followup` refuses them too. This is a tripwire; the structural controls are the defence.
+4. **Critical floor: critical findings are never downgraded.** Every critical-tier highlight visible to the reader must appear as a critical item. Under-rated items are raised (*Raised from …*), missing ones are injected (*Added by safety rule*).
 5. **Re-redaction** of every statement and quote.
 
-**Fail-safe.** If the run fails (no submission, step or budget limit, refusal, model error), the reader still receives the critical floor — the summary is marked degraded and shows only safety-rule findings.
+**Fail-safe.** If the run fails, the reader still receives the critical floor; the summary is marked degraded.
 
-**Trade-off made explicit.** The floor trusts the rule engine, and the rule engine over-alerts by design (spec §2a "safety bias"). On perfect answers the floor still forces ~1.2 false critical items per run on the seed notes (see [EVALUATION.md](./EVALUATION.md)); that is the measured price of never silently dropping a red flag. It is reduced at the source — NegEx, historical and hypothetical context rules — not by letting the model argue a flag away.
+**Trade-off made explicit.** The floor trusts the rule engine, which over-alerts by design. On perfect answers it still adds ~1.2 false critical items per run on the seed notes (EVALUATION.md); that is the measured price of never silently dropping a red flag, reduced at the source (NegEx, historical and hypothetical rules), not by letting the model argue a flag away.
 
-## 5. Prompts
+### 3.3 Prompts
 
-Two versioned prompts (`src/lib/agent/handover/prompts.ts`), each identified by a content hash stored with every run:
+`handover-v1` (short baseline) and `handover-v2` (workflow, exact-quote rules, how to read negation / safety-net advice / history, severity rubric, follow-up policy, data boundary). Each run stores the prompt version and content hash; which prompt is better is measured pairwise (EVALUATION.md §5).
 
-- `handover-v1` — a short baseline: role, tools, cite everything.
-- `handover-v2` — adds a workflow, exact-quote rules, how to read negation / safety-net advice / history, a severity rubric, when to propose follow-ups, and a data boundary for injected text.
+---
 
-Which is better is a measured claim, not a belief: the evaluation compares them pairwise on the same cases (EVALUATION.md §5).
-
-## 6. Failure modes and their controls
+## 4. Failure modes and their controls
 
 | Failure | Control | Where it is measured |
 | --- | --- | --- |
-| Hallucinated fact | Quote verification; rejection is visible in the UI | FABRICATION rate, citation validity |
-| Negated finding reported as present | Negation-conflict check; prompt guidance | FABRICATION (false assertions) |
-| Missed red flag | Critical floor injection | Raw critical recall, guardrail injections |
-| Red flag under-rated | Critical floor upgrade | SEVERITY_DOWNGRADE, guardrail upgrades |
-| Prompt injection in a note | Patient-bound tools, human-confirmed writes, instruction tripwire | LEAKAGE on `adv-prompt-injection` |
-| Cross-patient or cross-role leakage | Capability scoping, RBAC accessors, same-role run visibility | LEAKAGE on `adv-cross-patient`, `adv-staff-draft` |
-| Runaway cost / latency | Step limit, token budget, deadline, per-actor rate limit | Cost and latency tables |
-| Provider outage / 429 | Jittered retries; infrastructure errors never scored as model failures | `errors.jsonl` |
-| Model refusal | `fallbacks: "default"`; `REFUSED` outcome; degraded summary | Refusal count, fallback runs |
+| Hallucinated fact | Quote verification; rejections visible in the UI | Handover FABRICATION rate; risk rejected drivers |
+| Negated finding reported as present | Negation-conflict check; prompt guidance | Handover FABRICATION; risk `negation` / `safety-net` strata |
+| Missed red flag | Handover critical floor; risk floor | Critical recall; risk under-triage and floor rescues |
+| Patient under-triaged by the model | `final = max(model, floor)`; clinician override | Risk model vs final under-triage, sensitivity ≥ HIGH |
+| Context the rules cannot see (sepsis numbers, stroke) | The model, with cited drivers | Risk `context` stratum |
+| Prompt injection in a note | Patient-bound tools, human-confirmed writes, instruction tripwire, floor | Handover LEAKAGE; risk `injection` stratum |
+| Cross-patient or cross-role leakage | Capability scoping, RBAC accessors, per-viewer evidence filtering | Handover `adv-cross-patient`, `adv-staff-draft`; risk `hiddenEvidence` tests |
+| Runaway cost / latency | Iteration limit, token budget, deadline, rate limits, unchanged-input skip | Cost and latency tables |
+| Provider outage / 429 / 529 | SDK retries; rule fallback (risk) or degraded summary (handover); queue retries | `errors.jsonl`, `http_retry` events |
+| Model refusal | Server-side fallback; `REFUSED` outcome; fallback path | Refusal and fallback counts |
 
-## 7. Operations
+## 5. Operations
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | — | Enables the live agent |
-| `NIGHTINGALE_AGENT_CLIENT` | `anthropic` | `simulated` runs the offline rule policy (labelled in the UI) |
-| `NIGHTINGALE_AGENT_MODEL` / `_EFFORT` / `_PROMPT` | `claude-opus-5-5` / `medium` / `handover-v2` | Model configuration |
-| `NIGHTINGALE_AGENT_MAX_STEPS` / `_TOKEN_BUDGET` / `_DEADLINE_MS` | 12 / 400 000 / 180 000 | Loop limits |
+| `ANTHROPIC_API_KEY` | — | Enables the live agents |
+| `NIGHTINGALE_AGENTS_ENABLED` | `true` | `false` switches every model call off (rules keep working) |
+| `NIGHTINGALE_AGENT_CLIENT` | `anthropic` | `simulated` runs the offline policies (labelled in the UI) |
+| `NIGHTINGALE_AGENT_MODEL` / `_EFFORT` / `_PROMPT` | `claude-opus-5-5` / `medium` / `handover-v2` | Model configuration (`_PROMPT` applies to the handover agent) |
+| `NIGHTINGALE_AGENT_MAX_STEPS` / `_MAX_TOKENS` / `_TOKEN_BUDGET` / `_DEADLINE_MS` | 12 / 16 000 / 400 000 / 180 000 | Run limits (risk caps iterations at 8) |
 | `NIGHTINGALE_AGENT_FALLBACKS` | `default` | `off` disables server-side refusal fallback |
-| `NIGHTINGALE_AGENT_RATE_LIMIT` | `6/600` | Runs per actor per window (seconds) |
-| `NIGHTINGALE_SESSION_SECRET` | random per process outside production | HMAC key for session cookies; required in production |
+| `NIGHTINGALE_AGENT_RATE_LIMIT` | `6/600` | Handover runs per user per window (seconds) |
+| `NIGHTINGALE_RISK_AUTORUN` | on | `off` stops draining the risk queue after requests (use the cron endpoint instead) |
+| `NIGHTINGALE_CRON_SECRET` | — | Enables `POST /api/agent/risk/drain` with header `x-cron-secret` (≥ 16 chars; 404 when unset) |
 
-Known limits: the rate limiter and Glance cache are in-process (a multi-instance deployment needs a shared store); the demo login is not SSO; runs are synchronous HTTP requests (a queue with streamed progress would suit longer records); the rule-engine tier divergence in spec §2c is an open product decision.
+Known limits: rate limiters and the Glance cache are in-process (a multi-instance deployment needs a shared store); `after()` drains the risk queue on the instance that handled the write, so a serverless deployment should also call the drain endpoint on a schedule; the gold labels used to evaluate triage are author-labelled, not clinician-verified.

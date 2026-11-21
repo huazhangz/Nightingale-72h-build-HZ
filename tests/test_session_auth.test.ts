@@ -193,6 +193,17 @@ describe("accounts", () => {
     expect((await handleRegister(post("/api/auth/register", { ...base, clinicCode: enrollmentCode }))).status).toBe(409);
   });
 
+  it("limits unauthenticated registration attempts per client address", async () => {
+    const from = { "x-forwarded-for": `203.0.113.${Math.floor(Math.random() * 200) + 1}` };
+    const attempt = () => handleRegister(post("/api/auth/register", { clinicCode: "GUESS", name: "x", email: "x@y.z", password: "p", dateOfBirth: "" }, from));
+    for (let i = 0; i < 10; i += 1) {
+      expect((await attempt()).status).toBe(400);
+    }
+    const blocked = await attempt();
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
   it("lets admins invite staff, who activate once with a one-time link", async () => {
     const admin = await user("ADMIN");
     const staff = await user("STAFF");

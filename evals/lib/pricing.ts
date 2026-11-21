@@ -24,7 +24,11 @@ export function costUsd(model: string | null, usage: UsageTotals): number | null
   if (OFFLINE.has(model)) {
     return 0;
   }
-  const price = PRICES[model];
+  // Exact id, or the longest alias a dated snapshot id extends ("claude-opus-5-5-20261001").
+  const key = Object.keys(PRICES)
+    .filter((candidate) => model === candidate || model.startsWith(`${candidate}-`))
+    .sort((left, right) => right.length - left.length)[0];
+  const price = key ? PRICES[key] : undefined;
   if (!price) {
     return null;
   }

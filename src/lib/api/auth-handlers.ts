@@ -17,6 +17,7 @@ import {
 import { assertSameOrigin, currentUser, errorResponse, HttpError, requireActor } from "../auth/session";
 import { clearedSessionCookie, sessionCookie, signSession } from "../auth/session-token";
 import { DEMO_PASSWORD } from "../auth/demo";
+import { SlidingWindowLimiter } from "../agent/rate-limit";
 
 /** HTTP layer for accounts. Every response that signs someone in sets a fresh signed session cookie. */
 
@@ -31,6 +32,24 @@ const str = (value: unknown) => (typeof value === "string" ? value : "");
 
 function clientKey(request: Request): string {
   return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "local";
+}
+
+/**
+ * Unauthenticated account endpoints cost a password hash per call and could be used to guess clinic
+ * codes or probe which emails are registered, so they are limited per client address.
+ */
+const registerLimiter = new SlidingWindowLimiter(10, 60 * 60 * 1000);
+const activateLimiter = new SlidingWindowLimiter(20, 10 * 60 * 1000);
+
+function rateLimited(limiter: SlidingWindowLimiter, request: Request): Response | null {
+  const result = limiter.take(clientKey(request));
+  if (result.allowed) {
+    return null;
+  }
+  return Response.json(
+    { error: "Too many attempts. Try again later.", code: "RATE_LIMITED" },
+    { status: 429, headers: { "retry-after": String(Math.ceil(result.retryAfterMs / 1000)) } },
+  );
 }
 
 function withSession(payload: Json, user: { id: string; sessionVersion: number }, status = 200): Response {
@@ -83,6 +102,8 @@ export async function handleMe(request: Request): Promise<Response> {
 export async function handleRegister(request: Request): Promise<Response> {
   try {
     assertSameOrigin(request);
+    const limited = rateLimited(registerLimiter, request);
+    if (limited) return limited;
     const payload = await body(request);
     const user = await registerPatient({
       clinicCode: str(payload.clinicCode),
@@ -100,6 +121,8 @@ export async function handleRegister(request: Request): Promise<Response> {
 export async function handleActivate(request: Request): Promise<Response> {
   try {
     assertSameOrigin(request);
+    const limited = rateLimited(activateLimiter, request);
+    if (limited) return limited;
     const payload = await body(request);
     const user = await activateAccount({ token: str(payload.token), password: str(payload.password) });
     return withSession({ user: { id: user.id, role: user.role, name: user.name } }, user);

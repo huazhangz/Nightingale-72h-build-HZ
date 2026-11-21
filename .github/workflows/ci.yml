@@ -43,10 +43,15 @@ jobs:
       - name: Offline evaluation smoke (grader self-test, no API key)
         run: npm run eval:smoke
 
-      - name: Upload evaluation report
+      - name: Offline risk triage evaluation (floor invariants, oracle check, no API key)
+        run: npm run eval:risk:smoke
+
+      - name: Upload evaluation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: eval-smoke-report
-          path: evals/results/smoke/report.md
+          name: eval-smoke-reports
+          path: |
+            evals/results/smoke/report.md
+            evals/results/risk-smoke/report.md
           if-no-files-found: ignore

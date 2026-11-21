@@ -104,11 +104,11 @@ async function main(): Promise<number> {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const outDir = path.resolve(root, values.out ?? path.join("evals", "results", stamp));
 
-  // Fresh, isolated schema for the evaluation database.
+  // Fresh, isolated schema for the evaluation database (disposable: schema changes may drop its data).
   if (!existsSync(dbFile)) {
     console.log(`Creating evaluation database at ${dbFile}`);
   }
-  const push = spawnSync("npx", ["prisma", "db", "push", "--skip-generate"], {
+  const push = spawnSync("npx", ["prisma", "db", "push", "--skip-generate", "--accept-data-loss"], {
     cwd: root,
     env: process.env,
     stdio: "inherit",

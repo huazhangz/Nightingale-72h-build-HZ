@@ -1,14 +1,19 @@
-# Handover Agent — Evaluation
+# Agents — Evaluation
 
-**Code:** `evals/` · **Run:** `npm run eval` · **Latest offline report:** [docs/eval/2026-11-21-offline-baselines.md](./eval/2026-11-21-offline-baselines.md)
+Two evaluations share one harness (`evals/lib`: isolated fixtures, statistics, pricing):
 
-The question is not "does the summary look good?" but: how often does the agent produce a handover a clinician can trust, how stable is that across attempts, which way does it fail, and is a change (prompt, model, effort) a real improvement or noise.
+- **Part A — handover agent** (`evals/`, `npm run eval`). Latest offline report: [docs/eval/2026-11-21-offline-baselines.md](./eval/2026-11-21-offline-baselines.md)
+- **Part B — risk triage agent** (`evals/risk/`, `npm run eval:risk`). Latest offline report: [docs/eval/2026-11-21-risk-offline-baselines.md](./eval/2026-11-21-risk-offline-baselines.md)
+
+The question is not "does the output look good?" but: how often can a clinician trust it, how stable is that across attempts, which way does it fail, and is a change (prompt, model, effort) a real improvement or noise.
 
 ---
 
+# Part A — Handover agent
+
 ## 1. What is evaluated
 
-The production entry point, `runHandoverAgent`, with the production tools, guardrails and loop limits, against fixtures created the way production creates them (notes written through the same redaction and rule-engine pass). Each case runs in its own clinic in a separate SQLite file (`prisma/eval.db`), so the demo database is never touched and cases cannot see each other.
+The production entry point, `runHandoverAgent`, with the production tools, guardrails and run limits, against fixtures created the way production creates them (notes written through the same redaction and rule-engine pass). Each case runs in its own clinic in a separate SQLite file (`prisma/eval.db`), so the demo database is never touched and cases cannot see each other.
 
 **Graded object: the model's raw submission, before guardrails.** The guardrails exist to hide model mistakes from clinicians; grading after them would measure the guardrail. What the guardrails did is recorded separately.
 
@@ -107,3 +112,86 @@ Not yet run: the live comparison of `handover-v1` and `handover-v2` on `claude-o
 - 20 cases: with per-case pass rates the minimum detectable paired difference is large (the offline rules comparison shows an MDE near 10 points even with three reps). Treat differences smaller than the reported MDE as undetected, not absent.
 - Ground truth is author-labelled and the feedback is synthetic; results speak for these cases, not for clinical deployment.
 - Graders use string matching for coverage; a correct paraphrase without the expected term fails `mustCover`. The per-trial transcripts exist so such cases can be read, and the case set should grow with every new failure mode observed.
+
+---
+
+# Part B — Risk triage agent
+
+## B1. What is evaluated
+
+One MANUAL assessment per trial through the production path: `enqueueRiskAssessment` → `runRiskAssessment` (atomic claim, service account, tools, guardrails, floor, persistence). Each trial builds its own clinic in `prisma/eval.db` and removes it afterwards.
+
+Two levels are recorded per trial and scored separately:
+
+- **model level**: what the model submitted, before the floor; measures the model;
+- **final level**: `max(model level, floor)`, what the worklist shows; measures the system.
+
+The gap between them is what the deterministic floor contributes (*floor lifts*, and *floor rescues* when it turns an under-triage into a correct or higher level).
+
+## B2. Cases (21)
+
+`evals/risk/cases.ts`. Each case is a short record and the level a clinician should see now, with the verbatim quote that justifies it. Gold distribution: LOW 7, MEDIUM 3, HIGH 3, CRITICAL 8. All labels are **author-labelled from the note text, not clinician-verified**, and none is derived from a model or from the floor.
+
+| Stratum | Cases | What it probes |
+| --- | ---: | --- |
+| `red-flag` | 5 | Findings the floor already catches (SpO2 86%, BP 212/124, anaphylaxis; exertional chest pain; chest infection) |
+| `context` | 6 | Severity no keyword rule sees: sepsis given only as numbers, stroke, ischaemic rest pain (floor says MEDIUM), heart failure, head injury on apixaban, potassium 5.8 |
+| `negation` / `safety-net` / `historical` | 3 | Red-flag words that are denied, only advised about, or past history |
+| `resolved` | 3 | An old red flag outside the window; "the fever resolved"; hyperpyrexia three days ago, now improving |
+| `injection` | 3 | Instructions in the note to rate a hypoxic patient LOW, a thunderclap headache LOW, a routine visit CRITICAL |
+| `routine` | 1 | Nothing of concern |
+
+## B3. Metrics
+
+`evals/risk/metrics.ts`, unit-tested (`tests/test_risk_eval.test.ts`). Levels are ordinal and errors are asymmetric:
+
+- **exact**, **within one level**;
+- **under-triage** (final below gold) and **severe under-triage** (two or more levels below, e.g. CRITICAL rated MEDIUM): the safety numbers;
+- **over-triage** (final above gold): the attention cost;
+- **sensitivity ≥ HIGH** (gold HIGH/CRITICAL rated HIGH/CRITICAL), **sensitivity CRITICAL**, **specificity LOW**;
+- **quadratic weighted kappa** (agreement beyond chance that penalises far misses more than near ones);
+- **all reps exact** per case (pass^k with k = reps): reliability across attempts;
+- confusion matrix, per-stratum accuracy, floor lifts and rescues, model failures (fell back to the floor), unsupported levels, rejected drivers, cost and latency.
+
+Intervals are **case-level cluster bootstrap** (reps of one case are resampled together). Variants are compared with the rules baseline **paired by case** (per-case rates, sign-flip permutation p-values with Holm correction, bootstrap CI, minimum detectable effect), reusing `evals/lib/stats.ts`.
+
+Every row is also checked against two invariants, whatever the variant: the final level is never below the floor and never below the model's level. A violation is a bug and fails the run.
+
+## B4. Offline baselines (run in CI)
+
+`npm run eval:risk:smoke`: 21 cases × 1 rep, no API key.
+
+| Variant | exact | under-triage | severe under | over-triage | sens ≥ HIGH | sens CRITICAL | QWK |
+| --- | --- | --- | ---: | ---: | --- | ---: | --- |
+| `rules` (floor only, the production fallback) | 57.1% [38.1, 76.2] | 38.1% [19.0, 57.1] | 23.8% | 4.8% | 36.4% [9.1, 66.7] | 50.0% | 0.46 [0.12, 0.78] |
+| `simulated` (offline rule policy through the real agent path) | 57.1% | 38.1% | 23.8% | 4.8% | 36.4% | 50.0% | 0.46 |
+| `oracle` (submits gold, through tools and guardrails) | 95.2% | **0.0%** | 0.0% | 4.8% | 100.0% | 100.0% | 0.99 |
+
+What this shows:
+
+- **The floor alone misses every `context` case** (sepsis numbers, stroke and head injury are rated LOW; ischaemic rest pain and heart failure MEDIUM) and the injected thunderclap headache. This is the gap the model has to close, and the number the live evaluation will report first: model-level sensitivity ≥ HIGH on these cases.
+- **The floor never lowers a correct answer** (oracle under-triage 0%), and its price on a perfect model is one over-triage in 21 cases: "The fever resolved four days ago" is still an affirmed "fever" to the keyword engine. Teaching the context engine a *resolved* rule removes it.
+- The injection that tries to rate a hypoxic patient LOW cannot succeed whatever the model does: the floor reads SpO2 87% and severe respiratory distress.
+- The oracle's model level matches gold on all 21 cases, so every evidence quote is citable and the harness is consistent (`--assert-baselines` checks this in CI).
+
+## B5. Running it
+
+```bash
+npm run eval:risk:smoke
+```
+
+```bash
+npm run eval:risk -- --variants rules,claude --reps 3 --yes
+```
+
+```bash
+npm run eval:risk -- --report-only evals/results/<run-directory>
+```
+
+Options: `--model`, `--effort`, `--cases <ids or strata>`, `--concurrency`, `--out`, `--keep-fixtures`. The paid variant prints an estimate and refuses to start without `--yes` (21 cases × 3 reps on `claude-opus-5-5` ≈ $5). Runs resume, and refuse to mix case-set or prompt versions; infrastructure failures and served-model substitutions go to `errors.jsonl` and are retried, never scored.
+
+## B6. Limits
+
+- 21 cases, author-labelled. With one or three reps the bootstrap intervals are wide (the rules baseline's exact accuracy spans 38–76%); differences below the reported MDE are undetected, not absent.
+- Triage levels are partly a matter of local policy (is new exertional chest pain HIGH or MEDIUM?). Within-one accuracy and kappa are reported for that reason; clinician labelling of the case set is the next step before any clinical claim.
+

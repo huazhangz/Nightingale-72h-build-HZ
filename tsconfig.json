@@ -41,6 +41,7 @@
     "src/**/*.tsx",
     "tests/**/*.ts",
     "evals/**/*.ts",
+    "scripts/**/*.ts",
     "vitest.config.ts",
     ".next/types/**/*.ts"
   ],

@@ -1,6 +1,6 @@
 # Nightingale-72h-build-HZ
 
-**EHR clinical intelligence** for acute handover: a Glance top card, a longitudinal Timeline, versioned care notes, deterministic risk highlighting, an unresolved-action workflow, and an **AI handover agent** whose every statement quotes its source note — with clinic-scoped RBAC and PHI redaction on the server.
+**EHR clinical intelligence** for acute care teams: a risk-sorted **patient worklist** maintained by an **automatic risk triage agent**, an **AI handover agent** whose every statement quotes its source note, a Glance top card, a longitudinal Timeline, versioned care notes, deterministic risk highlighting and an unresolved-action workflow — with password accounts, invitations, clinic-scoped RBAC and PHI redaction on the server.
 
 This is a **judge-ready** application manual for the repository. Implementation detail beyond this page lives in [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md). Open-source licenses are listed in [ATTRIBUTION.txt](./ATTRIBUTION.txt).
 
@@ -16,8 +16,9 @@ Nightingale is a Next.js **App Router** app. The browser talks to Route Handlers
 | Styling | Custom CSS (`app/globals.css`) — **not** Tailwind CSS |
 | Icons | Inline SVG — **not** Lucide React |
 | Data | Prisma 6 + SQLite |
-| Agent | Hand-written tool loop on the Anthropic Messages API (`@anthropic-ai/sdk`), zod tool schemas, deterministic guardrails |
-| Evaluation | `evals/`: pass@k / pass^k, case-clustered intervals, paired permutation tests |
+| Agents | Anthropic SDK Tool Runner (`@anthropic-ai/sdk`) with strict zod tools, budgets and an outcome taxonomy; deterministic guardrails and safety floors |
+| Auth | Email + password (scrypt), signed HttpOnly session cookies with revocation, invitations, lockout, rate limits, CSRF origin checks, security headers |
+| Evaluation | `evals/`: pass@k / pass^k, triage metrics (under-triage, sensitivity, weighted kappa), case-clustered intervals, paired permutation tests |
 | Tests | Vitest 3 + Testing Library + jsdom |
 | i18n | Five locales (`en`, `zh`, `fi`, `de`, `fr`) |
 
@@ -25,46 +26,55 @@ Primary surfaces:
 
 | Route | Role |
 | --- | --- |
-| `/glance` | AI handover summary (staff / clinicians), recency score, consultation progress, highest-risk highlights, unresolved / resolved actions |
+| `/login`, `/register`, `/activate` | Sign in; patient self-registration with a clinic code; one-time activation for invited staff |
+| `/patients` | Worklist sorted by risk level and review window (staff / clinicians / admins); add a patient |
+| `/glance` | Risk triage panel and AI handover summary (staff / clinicians), recency score, consultation progress, highest-risk highlights, unresolved / resolved actions |
 | `/timeline` | Same glance card plus encounter list, note details, revision history, inline highlights |
 | `/note-editor` | Create and patch notes (optimistic `baseVersion`, 409 on conflict) |
 | `/search` | Chronological / relevance search over RBAC-filtered notes |
+| `/account` | Profile, change password, sign out of all devices |
+| `/admin/users` | Invite staff, issue activation links, enable / disable accounts (admins) |
 
-Login (`POST /api/auth/login`) issues an HMAC-signed, HttpOnly session cookie. The header **Role** control (`PATIENT` / `STAFF` / `CLINICIAN`) verifies identity through that login. For the demo and tests, a raw `x-user-id` header is still accepted outside production (`NIGHTINGALE_ALLOW_HEADER_AUTH`); a valid signed session always takes precedence, and production refuses the raw header.
+Every page except `/login`, `/register` and `/activate` requires a session (`middleware.ts` redirects to `/login?next=…`). `POST /api/auth/login` issues an HMAC-signed, HttpOnly session cookie; every API route resolves the user from it (`requireActor`: signature, expiry, session version, account status, same-origin check). Details: [docs/SECURITY.md](./docs/SECURITY.md).
 
 ```
-Browser (CareShell)
-   x-user-id
+Browser (CareShell: session from /api/auth/me, cookie only)
         │
         ▼
-App Router  app/api/*  →  handlers.ts
+middleware.ts (page gate)  ·  App Router  app/api/*  →  handlers.ts / auth-handlers.ts
         │
-        ├── RBAC          src/lib/auth/rbac.ts
+        ├── Auth          src/lib/auth/  (accounts, password, session, rbac)
         ├── PHI           src/lib/security/redact.ts
-        ├── Notes         src/lib/care-note/entries.ts, revision.ts
+        ├── Notes         src/lib/care-note/entries.ts, revision.ts   ──▶ enqueue risk assessment
         ├── Glance        src/lib/care-note/glance.ts, CareAction
         ├── Highlights    keyword-highlights.ts, highlights.ts
-        ├── Agent         src/lib/agent/  (loop → tools → guardrails → AgentRun)
+        ├── Agents        src/lib/agent/core (SDK Tool Runner) · shared (record tools, citations)
+        │                 risk/ (queue → agent → floor → RiskAssessment) · handover/
         └── Prisma        src/lib/db.ts  →  prisma/dev.db
 ```
 
 ---
 
-## AI handover agent
+## Agents
 
-On the Glance page, staff and clinicians can generate a handover summary. An agent reads the record through four tools, writes a summary in which **every line quotes its source note**, may propose follow-up tasks, and submits; deterministic code then checks every quote against the note, enforces "critical findings are never downgraded", and re-redacts the output.
+Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool Runner with strict zod tools, a terminal submit tool, iteration / token / deadline budgets and a distinct outcome for every way a run can end. Their tools are bound to one patient and read through the same RBAC-checked accessors as the UI. Deterministic code checks every quote the model cites and applies a safety floor the model cannot lower.
+
+**Risk triage agent** (`src/lib/agent/risk/`). Every note write enqueues an assessment; the queue claims it atomically and runs it after the response. The agent reads the record as a non-login service account and submits a level (LOW → CRITICAL), a review window and cited drivers. The final level is `max(model level, rule floor)`: severe vitals, anaphylaxis and severe respiratory distress floor at CRITICAL, clinician-marked critical findings at HIGH, red-flag symptoms at MEDIUM. Without a model the floor alone is the assessment, labelled *Rules*. Clinicians can override with a reason (audited); nurses see the level and only the evidence their role may open.
+
+**Handover agent** (`src/lib/agent/handover/`). Reads the record with the requesting user's permissions, writes a summary in which every line quotes its source note, may propose follow-ups (a clinician must accept them), and guarantees that critical findings are never downgraded.
 
 | Piece | Where |
 | --- | --- |
-| Hand-written agent loop (no framework): step limit, token budget, deadline, jittered retries, terminal tool | `src/lib/agent/runtime/` |
-| Tools `get_glance_cards`, `get_timeline`, `get_notes`, `create_followup` (proposal only), `submit_handover_summary` — bound to one actor and patient | `src/lib/agent/handover/tools.ts` |
-| Guardrails: quote verification, negation conflicts, critical floor, injection tripwire, re-redaction | `src/lib/agent/handover/guardrails.ts` |
-| Runs, proposals, API, UI | `AgentRun` / `AgentFollowupProposal`, `app/api/patients/[id]/handover`, `HandoverPanel.tsx` |
-| Evaluation | `evals/`, `npm run eval` |
+| Platform: Tool Runner wrapper, tool binding, budgets, trace | `src/lib/agent/core/` |
+| Record tools `get_glance_cards`, `get_timeline`, `get_notes`; evidence ledger; citation checks | `src/lib/agent/shared/` |
+| Risk: queue, service account, floor, guardrails, worklist, override | `src/lib/agent/risk/`, `app/api/patients/**/risk`, `PatientWorklist.tsx`, `RiskPanel.tsx` |
+| Handover: tools, guardrails, proposals | `src/lib/agent/handover/`, `app/api/patients/[id]/handover`, `HandoverPanel.tsx` |
+| Evaluation | `evals/` (`npm run eval`), `evals/risk/` (`npm run eval:risk`) |
+| First live-API check | `npm run agent:live-check -- --yes` (one run per agent, prints cost) |
 
-**Enable it:** set `ANTHROPIC_API_KEY` (default model `claude-opus-5-5`), or set `NIGHTINGALE_AGENT_CLIENT=simulated` to demo the UI with an offline rule policy (clearly labelled, no language model). Without either, the panel explains that the agent is not configured. All settings are listed in [.env.example](./.env.example).
+**Enable them:** set `ANTHROPIC_API_KEY` (default model `claude-opus-5-5`), or `NIGHTINGALE_AGENT_CLIENT=simulated` to demo with the offline rule policies (labelled, no language model). Without either, risk levels come from the rule floor and the handover panel explains that the agent is not configured. `NIGHTINGALE_AGENTS_ENABLED=false` switches every model call off. All settings: [.env.example](./.env.example).
 
-Design and trade-offs: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md).
+Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
 ---
 
@@ -91,7 +101,7 @@ Design and trade-offs: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measureme
    npm run dev
    ```
 
-   Open [http://localhost:3000](http://localhost:3000) (redirects to `/timeline`).
+   Open [http://localhost:3000](http://localhost:3000): you are sent to `/login`. Demo sign-in shortcuts appear when the server runs with `NIGHTINGALE_DEMO_MODE=true`.
 
 4. **Tests**
 
@@ -99,43 +109,50 @@ Design and trade-offs: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measureme
    npx vitest run
    ```
 
-   **164 / 164** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **186 / 186** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
-5. **Agent evaluation** (offline, no API key: grader self-test on oracle / null / rule baselines)
+5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
    ```bash
    npm run eval:smoke
    ```
 
+   ```bash
+   npm run eval:risk:smoke
+   ```
+
 ### Environment
 
-Copy `.env.example` if needed:
+Copy `.env.example` to `.env`. The only required value is:
 
 ```
 DATABASE_URL="file:./dev.db"
 ```
 
-Prisma CLI resolves this relative to `prisma/`. The application Prisma client opens `prisma/dev.db` from the repo root (Windows-safe `file:C:/...` form).
+In production also set `NIGHTINGALE_SESSION_SECRET` (at least 32 characters) and `NIGHTINGALE_PUBLIC_URL`; leave `NIGHTINGALE_DEMO_MODE` unset. Every other variable is optional and documented in `.env.example`.
 
-### Demo login
+Prisma CLI resolves the database URL relative to `prisma/`. The application Prisma client opens `prisma/dev.db` from the repo root (Windows-safe `file:C:/...` form).
 
-`GET /api/demo` (and `prisma/seed.ts`) provision **Nightingale Demo Clinic**:
+### Demo accounts
 
-| Role | How to verify |
-| --- | --- |
-| STAFF | Employee code `00001` (Museil Kamil) |
-| CLINICIAN | Employee code `00002` (Joe Zhou) |
-| PATIENT | e.g. Elena Rossi, phone `555-010-1001`, DOB `1984-03-12` |
+`npx prisma db seed` provisions **Nightingale Demo Clinic** with ten patients, rule-based risk assessments for each, and these accounts (password `Nightingale-Demo-2026` for all):
 
-Secondary verification for staff/clinician is the same digit string as the employee code.
+| Role | Email | Name |
+| --- | --- | --- |
+| CLINICIAN | `clinician@nightingale.test` | Joe Zhou |
+| STAFF | `staff@nightingale.test` | Museil Kamil |
+| ADMIN | `admin@nightingale.test` | Avery Admin |
+| PATIENT | `elena.rossi@nightingale.test` (and the other nine patients) | Elena Rossi |
+
+Patients can self-register at `/register` with clinic code `NIGHTINGALE-DEMO-2026`. Staff accounts are created only by invitation (`/admin/users`). These credentials are for the demo database only.
 
 ---
 
 ## Test Suite & Compatibility Guide
 
-Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests in `tests/test_ui_refresh.test.ts` use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
+Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 164 / 164 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 186 / 186 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -197,6 +214,10 @@ Enforcement is **server-side** in `src/lib/auth/rbac.ts` (UI hiding is not a sec
 | --- | --- | --- | --- | --- |
 | Own-record only | Yes | Clinic-scoped | Clinic-scoped | Clinic-scoped |
 | Glance recency / risk / actions | Hidden | Yes | Yes | Yes |
+| Worklist and risk level | No | Yes | Yes | Yes |
+| Risk evidence from notes the role cannot open | — | Counted, not shown | Yes | Yes |
+| Override risk level (with reason) | No | No | Yes | Yes |
+| Invite / disable users | No | No | No | Yes |
 | Timeline raw body | No | Staff notes; **not** unreleased clinician drafts | Yes | Yes |
 | Patient-facing summary | After clinician **FINAL_SUMMARY** only | Yes | Yes | Yes |
 | Internal comments | No | Yes | Yes | Yes |
@@ -280,9 +301,11 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **164 / 164** passing |
+| `npm run test` or `npx vitest run` | **186 / 186** passing |
 | `npm run typecheck` | 0 errors |
+| `npm run build` | passes |
 | `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |
+| `npm run eval:risk:smoke` | oracle matches gold on every case; the floor never lowers a level |
 
 Coverage includes:
 
@@ -293,15 +316,21 @@ Coverage includes:
 - CareAction create / retag / resolve (`tests/test_actions.test.ts`)
 - Concurrent edits, revision uniqueness, progress engine, recency/decay
 - UI refresh of glance after save; revision-history table without internal comments
-- Seeded 10 patients + Museil Kamil / Joe Zhou
+- Seeded 10 patients, demo accounts and rule-based risk assessments
+- Accounts: passwords, lockout, sessions and revocation, invitations, registration, rate limits, CSRF (`tests/test_session_auth.test.ts`)
+- Agent platform on the real SDK Tool Runner driven by a scripted transport (`tests/test_agent_core.test.ts`)
+- Risk triage: floor, guardrails, queue, service account, override, per-viewer evidence (`tests/test_risk_agent.test.ts`, `tests/test_risk_ui.test.ts`), evaluation metrics (`tests/test_risk_eval.test.ts`)
+- Handover agent: tools, RBAC, guardrails, persistence (`tests/test_handover_agent.test.ts`)
 - i18n dictionaries (five locales)
 
 ---
 
 ## More documentation
 
-- [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md) — handover agent: loop, tools, permission boundary, guardrails, failure modes
-- [docs/EVALUATION.md](./docs/EVALUATION.md) — evaluation method, statistics, baseline results
+- [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md) — agent platform, risk triage agent, handover agent: tools, permission boundary, floors, guardrails, failure modes
+- [docs/EVALUATION.md](./docs/EVALUATION.md) — evaluation method, statistics, baseline results for both agents
+- [docs/SECURITY.md](./docs/SECURITY.md) — accounts, sessions, authorization, browser protections, PHI, known gaps
+- [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md) — live-API test plan with cost gates (Chinese)
 - [docs/UPGRADE_PLAN.zh.md](./docs/UPGRADE_PLAN.zh.md) — upgrade plan (Chinese)
 - [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md) — architecture, highlight engine, CareAction, RBAC, trade-offs
 - [docs/CLINICAL_HIGHLIGHT_RULES.txt](./docs/CLINICAL_HIGHLIGHT_RULES.txt) — highlight ontology

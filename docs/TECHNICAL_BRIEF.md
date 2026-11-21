@@ -8,22 +8,22 @@
 
 ## 1. Executive summary and system architecture
 
-Nightingale is a **clinic-scoped EHR intelligence layer** for handover, not a full HIS. It answers three questions in one session: *what is highest risk right now* (Glance), *what happened over time* (Timeline), and *what is still open* (CareAction). Notes are versioned, highlights are offset-addressable, and patients never receive raw narrative or internal commentary.
+Nightingale is a **clinic-scoped EHR intelligence layer** for handover, not a full HIS. It answers four questions in one session: *which patient needs attention first* (the risk-sorted worklist), *what is highest risk for this patient right now* (Glance), *what happened over time* (Timeline), and *what is still open* (CareAction). Notes are versioned, highlights are offset-addressable, and patients never receive raw narrative or internal commentary.
 
-The highlight path is a **deterministic local phrase engine** plus optional human spans, with **no outbound LLM**. The separate, opt-in AI handover agent (AGENT_DESIGN.md) uses an LLM only to draft summaries, and every line it writes is verified against these notes before display. That keeps P95 glance/timeline work on the local SQLite + in-process cache path and avoids hallucinated risk labels.
+The highlight path is a **deterministic local phrase engine** plus optional human spans, with **no outbound LLM**. Two opt-in agents (AGENT_DESIGN.md) use an LLM: the risk triage agent rates each patient after every note write (asynchronously, after the response), and the handover agent drafts summaries on request. Every reason or line they cite is verified against the notes, and a deterministic floor built on this engine bounds them from below. Glance and Timeline never wait on a model: they stay on the local SQLite + in-process cache path.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  Client (CareShell)                                             │
-│  /glance  /timeline  /note-editor  /search                      │
-│  Glance cards · Timeline list · Note Details modal              │
+│  Client (CareShell)        middleware.ts: no session → /login   │
+│  /patients /glance /timeline /note-editor /search /account      │
+│  Worklist · Risk panel · Glance cards · Timeline · Note Details │
 │  Revision History table · Highlight composer (HUMAN)            │
-│  Role gate → x-user-id on every fetch                           │
+│  Session cookie (HttpOnly) on every fetch · 401 → /login        │
 └───────────────────────────────┬─────────────────────────────────┘
                                 │ HTTPS / same-origin JSON
 ┌───────────────────────────────▼─────────────────────────────────┐
 │  Next.js App Router  app/api/*  →  src/lib/api/handlers.ts      │
-│  requireActor · RBAC · isolation · 409 ConflictError            │
+│  requireActor (session, origin, status) · RBAC · isolation · 409│
 │  Server-only modules (Prisma never imported from Client)        │
 └───────┬─────────────────┬───────────────────┬───────────────────┘
         │                 │                   │
@@ -117,7 +117,7 @@ Upsert-on-first-mutate means resolving a derived plan line materializes a row an
 
 ## 4. Security, privacy, and RBAC
 
-**Auth (demo):** login issues an HMAC-signed HttpOnly session cookie; a raw `x-user-id` header is accepted only outside production. This is not production SSO.
+**Auth:** email and password (scrypt), account lockout and rate limits, HMAC-signed HttpOnly session cookies revocable through a per-user session version, admin invitations with one-time hashed activation tokens, patient self-registration with a clinic code, same-origin checks on state-changing requests, and security headers. Full description and known gaps (no SSO or MFA yet): [SECURITY.md](./SECURITY.md).
 
 **Boundaries:** `assertClinicScope` (clinic mismatch → 403). `assertPatientIsolation` (patients may only address their own id). UI hiding is **not** the control.
 
@@ -202,7 +202,9 @@ Representative map:
 | Clinical highlights | `test_local_keyword_highlights`, `test_manual_highlights`, `test_highlight_provenance` |
 | CareAction loop | `test_actions` |
 | Integrity | `test_revision_history`, `test_concurrent_edits`, `test_progress_engine`, `test_decay`, `test_recency` |
-| UI contracts | `test_ui_refresh` (glance refresh; revision dialog without internal comments) |
+| UI contracts | `test_ui_refresh` (app shell, glance refresh, revision dialog without internal comments), `test_risk_ui` (risk panel, login redirects) |
+| Accounts / sessions | `test_session_auth` |
+| Agents | `test_agent_core`, `test_risk_agent`, `test_handover_agent`, `test_risk_eval` |
 | Seed / i18n | `test_seed_patients`, `test_i18n` |
 
-This brief describes the **shipped** architecture. The AI handover agent is documented in [AGENT_DESIGN.md](./AGENT_DESIGN.md) and measured in [EVALUATION.md](./EVALUATION.md). Demo login must be replaced by SSO before any live PHI deployment.
+This brief describes the **shipped** architecture. The risk triage and handover agents are documented in [AGENT_DESIGN.md](./AGENT_DESIGN.md) and measured in [EVALUATION.md](./EVALUATION.md); accounts and sessions in [SECURITY.md](./SECURITY.md). SSO, MFA and a shared rate-limit store are required before any live PHI deployment.

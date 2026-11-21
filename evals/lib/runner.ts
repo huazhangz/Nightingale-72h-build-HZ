@@ -71,6 +71,14 @@ export type ErrorRow = {
   startedAt: string;
 };
 
+/**
+ * True when the served model is the requested one. The API may report a dated snapshot of an alias
+ * ("<requested>-<date>"), which is the same model; anything else is a substitution.
+ */
+export function servedAsRequested(requested: string, served: string): boolean {
+  return served === requested || served.startsWith(`${requested}-`);
+}
+
 /** Fixed "today" so prompts are byte-identical across runs (and cacheable). */
 export const EVAL_NOW = new Date("2026-11-21T12:00:00.000Z");
 
@@ -262,7 +270,7 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
       const servedMismatch =
         variant.kind === "anthropic" &&
         !result.fallbackUsed &&
-        result.internal.run.servedModels.some((served) => served !== variant.model);
+        result.internal.run.servedModels.some((served) => !servedAsRequested(variant.model, served));
       if (INFRASTRUCTURE_OUTCOMES.has(result.outcome) || servedMismatch) {
         errors += 1;
         const row: ErrorRow = {

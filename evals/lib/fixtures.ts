@@ -184,6 +184,7 @@ export async function destroyCase(clinicId: string): Promise<void> {
   const userIds = users.map((row) => row.id);
   const entryIds = (await prisma.careEntry.findMany({ where: { clinicId }, select: { id: true } })).map((row) => row.id);
   await prisma.agentRun.deleteMany({ where: { clinicId } });
+  await prisma.riskAssessment.deleteMany({ where: { clinicId } });
   await prisma.careAction.deleteMany({ where: { careEntryId: { in: entryIds } } });
   await prisma.highlightFeedback.deleteMany({ where: { highlight: { careEntryId: { in: entryIds } } } });
   await prisma.highlight.deleteMany({ where: { careEntryId: { in: entryIds } } });

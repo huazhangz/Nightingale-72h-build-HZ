@@ -3,6 +3,7 @@ import type { Prisma, RiskAssessment } from "@prisma/client";
 import type { Actor } from "../../auth/rbac";
 import { prisma } from "../../db";
 import type { ClientFactory } from "../core/client";
+import type { RunAgentResult } from "../core/run-agent";
 import { agentSettingsFromEnv, createClientFactory, isAgentAvailable, type HandoverAgentSettings } from "../handover/config";
 import { executeAgent, failAgentRun, finishAgentRun } from "../shared/execute";
 import { createRecordContext, type ClinicalTimelineEntry } from "../shared/record-context";
@@ -69,6 +70,8 @@ export type RunRiskOptions = {
   /** Skip the model even when configured (seed data, emergency kill switch). */
   rulesOnly?: boolean;
   now?: Date;
+  /** Evaluation-only: receives the full agent run (messages, trace, submission) for transcripts. */
+  onRun?: (run: RunAgentResult) => void;
 };
 
 /**
@@ -135,6 +138,7 @@ export async function runRiskAssessment(assessmentId: string, options: RunRiskOp
         messages: [{ role: "user", content: riskUserMessage(now) }],
       });
       agentRunId = executed.runId;
+      options.onRun?.(executed.result);
       const submitted = executed.result.outcome === "SUBMITTED";
       result = submitted
         ? applyRiskGuardrails({ submission: RiskSubmission.parse(executed.result.submission), ledger: context.ledger, floor })

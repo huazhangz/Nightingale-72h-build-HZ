@@ -17,7 +17,10 @@
     "db:seed": "prisma db seed",
     "postinstall": "prisma generate",
     "eval": "tsx --conditions=react-server evals/run.ts",
-    "eval:smoke": "tsx --conditions=react-server evals/run.ts --variants oracle,null,rules,rules-noisy --reps 3 --k 1,3 --out evals/results/smoke --assert-baselines"
+    "eval:smoke": "tsx --conditions=react-server evals/run.ts --variants oracle,null,rules,rules-noisy --reps 3 --k 1,3 --out evals/results/smoke --assert-baselines",
+    "eval:risk": "tsx --conditions=react-server evals/risk/run.ts",
+    "eval:risk:smoke": "tsx --conditions=react-server evals/risk/run.ts --variants rules,simulated,oracle --reps 1 --out evals/results/risk-smoke --assert-baselines",
+    "agent:live-check": "tsx --conditions=react-server scripts/agent-live-check.ts"
   },
   "prisma": {
     "seed": "tsx --conditions=react-server prisma/seed.ts"
