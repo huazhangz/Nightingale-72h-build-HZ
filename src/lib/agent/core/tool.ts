@@ -16,6 +16,12 @@ export type AgentTool<Context, Input = unknown> = {
   schema: z.ZodType<Input>;
   /** A terminal tool ends the run; its validated input is the run's result. It is never executed. */
   terminal?: boolean;
+  /**
+   * Terminal tools only: deterministic checks on a schema-valid submission (for example, citations
+   * that cannot be verified). Problems send the submission back to the model for repair, up to the
+   * run's repair budget; after that the submission is accepted and downstream guardrails decide.
+   */
+  check?(input: Input, context: Context): string[];
   run(input: Input, context: { context: Context; signal?: AbortSignal | null }): Promise<unknown>;
 };
 
@@ -55,6 +61,9 @@ export function toInputSchema(schema: z.ZodType): BetaTool["input_schema"] {
   return transformed as BetaTool["input_schema"];
 }
 
+/** Shared between the runner and the bound terminal tool: problems to return for one repair round. */
+export type RepairState = { pending: string[] | null };
+
 /**
  * Bind definitions to one run. Every failure becomes a structured `is_error` result with a safe
  * message: unexpected exceptions never reach the model verbatim (the SDK would otherwise send
@@ -64,6 +73,7 @@ export function bindTools<Context>(
   tools: ReadonlyArray<AgentTool<Context>>,
   context: Context,
   trace: TraceEvent[],
+  repair: RepairState = { pending: null },
 ): BetaRunnableTool<unknown>[] {
   return tools.map((tool) => {
     const record = (event: Omit<Extract<TraceEvent, { type: "tool_call" }>, "type" | "name">) =>
@@ -85,6 +95,16 @@ export function bindTools<Context>(
       async run(input: unknown, runContext) {
         const started = Date.now();
         const inputBytes = JSON.stringify(input ?? null).length;
+        if (tool.terminal && repair.pending) {
+          // The runner sent a valid submission back: list what to fix, then let the model resubmit.
+          const problems = repair.pending;
+          repair.pending = null;
+          const message =
+            `Submission not accepted yet. Fix these ${problems.length} problem(s) and call ${tool.name} again, alone, ` +
+            `with the complete corrected submission:\n- ${problems.slice(0, 20).join("\n- ")}`;
+          record({ ok: false, errorCode: "SUBMISSION_REPAIR", durationMs: 0, inputBytes, outputBytes: message.length });
+          throw new ToolError(errorPayload("SUBMISSION_REPAIR", message));
+        }
         if (tool.terminal) {
           // Reached only when the terminal call shared a turn with other calls: the submission was
           // written before the model could read their results.

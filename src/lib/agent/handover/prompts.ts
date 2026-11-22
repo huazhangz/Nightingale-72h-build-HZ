@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
  * the first user message.
  */
 
-export const PROMPT_VERSIONS = ["handover-v1", "handover-v2", "handover-v3", "handover-v4"] as const;
+export const PROMPT_VERSIONS = ["handover-v1", "handover-v2", "handover-v3", "handover-v4", "handover-v5"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
 export const DEFAULT_PROMPT_VERSION: PromptVersion = "handover-v4";
 
@@ -91,12 +91,35 @@ Safety-net advice, red-flag counselling and "return if ..." instructions are alw
 </advice_items>`,
 );
 
+/**
+ * handover-v5: v4 with server-issued evidence ids instead of free-text quotes (citation mode
+ * "evidence"). In v4, 9 of 11 failing runs had a quote that was stitched or slightly altered; with
+ * ids the server supplies the exact words, so that failure is impossible by construction. What
+ * remains checkable is whether the cited sentence supports the statement.
+ */
+const V4_EVIDENCE_RULES = V4.slice(V4.indexOf("<evidence_rules>"), V4.indexOf("</evidence_rules>") + "</evidence_rules>".length);
+const V5 = V4.replace(
+  V4_EVIDENCE_RULES,
+  `<evidence_rules>
+- get_notes returns each note's text as numbered evidence sentences, e.g. {"id": "N2.S3", "text": "..."}.
+- Each item states one fact in plain clinical language (at most ~30 words) and cites 1-3 evidence ids whose sentences directly support it.
+- Cite the id; do not copy or retype the sentence. Use only ids returned by get_notes in this session.
+- A statement drawn from several sentences cites each of them. If no sentence supports a statement, leave the statement out.
+</evidence_rules>`,
+).replace("2. Read every note that has a body available with get_notes.", "2. Read every note that has evidence available with get_notes.");
+
 const PROMPTS: Record<PromptVersion, string> = {
   "handover-v1": V1,
   "handover-v2": V2,
   "handover-v3": V3,
   "handover-v4": V4,
+  "handover-v5": V5,
 };
+
+/** How citations work for a prompt version: v5 cites server-issued evidence ids, earlier ones quote. */
+export function citationModeFor(version: PromptVersion): "quote" | "evidence" {
+  return version === "handover-v5" ? "evidence" : "quote";
+}
 
 export function systemPrompt(version: PromptVersion): string {
   return PROMPTS[version];

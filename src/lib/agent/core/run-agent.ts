@@ -6,7 +6,7 @@ import type {
   BetaMessageParam,
   BetaToolUseBlock,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
-import { bindTools, type AgentTool } from "./tool";
+import { bindTools, type AgentTool, type RepairState } from "./tool";
 import {
   emptyUsage,
   totalTokens,
@@ -41,6 +41,8 @@ export type RunAgentConfig = {
   deadlineMs: number;
   maxNudges: number;
   fallbacks?: "default" | null;
+  /** Repair rounds for terminal submissions that fail the tool's `check` (default 0). */
+  maxRepairs?: number;
 };
 
 export const DEFAULT_RUN_CONFIG: Omit<RunAgentConfig, "model" | "system"> = {
@@ -133,7 +135,12 @@ export async function runToolAgent<Context>(input: RunAgentInput<Context>): Prom
     throw new Error("runToolAgent requires a terminal tool");
   }
   const terminalNames = terminalTools.map((tool) => tool.name);
-  const runnable = bindTools(input.tools, input.context, trace);
+  const repairState: RepairState = { pending: null };
+  let repairs = 0;
+  // A valid submission sent back for repair is kept: if the run then ends without a better one
+  // (step, budget or nudge limit), this one is the result rather than nothing.
+  let heldSubmission: { submission: unknown; terminalTool: string } | null = null;
+  const runnable = bindTools(input.tools, input.context, trace, repairState);
   let toolTimeMs = 0;
   const toolTime = () => trace.reduce((sum, event) => sum + (event.type === "tool_call" ? event.durationMs : 0), 0);
 
@@ -223,12 +230,20 @@ export async function runToolAgent<Context>(input: RunAgentInput<Context>): Prom
         if (terminal) {
           const parsed = terminal.schema.safeParse(toolUses[0]!.input);
           if (parsed.success) {
-            return finish("SUBMITTED", { submission: parsed.data, terminalTool: terminal.name });
+            const problems = terminal.check?.(parsed.data, input.context) ?? [];
+            if (problems.length === 0 || repairs >= (config.maxRepairs ?? 0)) {
+              return finish("SUBMITTED", { submission: parsed.data, terminalTool: terminal.name });
+            }
+            // Not final yet: the runner executes the terminal tool, which returns the problems.
+            repairs += 1;
+            repairState.pending = problems;
+            heldSubmission = { submission: parsed.data, terminalTool: terminal.name };
+            trace.push({ type: "repair", step: steps, problems: problems.length });
           }
           // Invalid submission: let the runner return the validation error so the model can fix it.
         }
         if (totalTokens(usage) >= config.tokenBudget) {
-          return finish("BUDGET_EXCEEDED");
+          return heldSubmission ? finish("SUBMITTED", heldSubmission) : finish("BUDGET_EXCEEDED");
         }
         turnStarted = Date.now();
         toolTimeMs = toolTime();
@@ -236,10 +251,10 @@ export async function runToolAgent<Context>(input: RunAgentInput<Context>): Prom
 
       messages = [...runner.params.messages];
       if (lastStop === "tool_use" || steps >= config.maxIterations) {
-        return finish("STEP_LIMIT");
+        return heldSubmission ? finish("SUBMITTED", heldSubmission) : finish("STEP_LIMIT");
       }
       if (nudges >= config.maxNudges) {
-        return finish("NO_SUBMISSION");
+        return heldSubmission ? finish("SUBMITTED", heldSubmission) : finish("NO_SUBMISSION");
       }
       nudges += 1;
       trace.push({ type: "nudge", step: steps });

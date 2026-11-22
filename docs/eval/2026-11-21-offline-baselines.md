@@ -1,6 +1,6 @@
 # Handover agent evaluation report
 
-Grader `2026-11-21.2` · case set `f6a3adc3590b` (20 cases) · generated 2026-11-21T20:03:53.452Z
+Grader `2026-11-21.2` · case set `f6a3adc3590b` (20 cases) · generated 2026-11-22T00:18:00.064Z
 
 | Variant | Kind | Model | Prompt |
 | --- | --- | --- | --- |
@@ -53,12 +53,12 @@ Raw critical recall is the share of rule-engine critical findings the model itse
 
 ## Cost and latency
 
-| Variant | Mean $/run | Total $ | Mean input tok | Mean output tok | Mean cache-read tok | p50 / p95 wall (s) | p50 / p95 model (s) | Mean steps | Retries | Refusals | Fallback runs |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| oracle | $0.0000 | $0.00 | 300 | 60 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 3.0 | 0 | 0 | 0 |
-| null | $0.0000 | $0.00 | 100 | 20 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 1.0 | 0 | 0 | 0 |
-| rules | $0.0000 | $0.00 | 3500 | 700 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 3.5 | 0 | 0 | 0 |
-| rules-noisy | $0.0000 | $0.00 | 3500 | 700 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 3.5 | 0 | 0 | 0 |
+| Variant | Mean $/run | Total $ | Mean input tok | Mean output tok | Mean cache-read tok | p50 / p95 wall (s) | p50 / p95 model (s) | Mean steps | Retries | Citation repairs (runs) | Refusals | Fallback runs |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| oracle | $0.0000 | $0.00 | 300 | 60 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 3.0 | 0 | 0 | 0 | 0 |
+| null | $0.0000 | $0.00 | 100 | 20 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 1.0 | 0 | 0 | 0 | 0 |
+| rules | $0.0000 | $0.00 | 3500 | 700 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 3.5 | 0 | 0 | 0 | 0 |
+| rules-noisy | $0.0000 | $0.00 | 3500 | 700 | 0 | 0.0 / 0.0 | 0.0 / 0.0 | 3.5 | 0 | 0 | 0 | 0 |
 
 ## Paired comparisons (pass@1, paired by case)
 

@@ -58,3 +58,22 @@ export function containsNormalized(haystack: string, needle: string): boolean {
   const normalizedNeedle = normalizeForMatch(needle);
   return normalizedNeedle.length > 0 && normalizeForMatch(haystack).includes(normalizedNeedle);
 }
+
+/**
+ * Split text into sentence-level evidence segments, each an exact substring of the input (trimmed):
+ * line breaks always split; within a line, split after . ! ? when followed by whitespace and an
+ * upper-case letter, digit, quote or bracket. Abbreviations may occasionally split a sentence in
+ * two; that only makes segments shorter, never inexact.
+ */
+export function segmentSentences(text: string): string[] {
+  const segments: string[] = [];
+  for (const line of text.split(/\n+/)) {
+    for (const part of line.split(/(?<=[.!?])\s+(?=[A-Z0-9"'(\[\u201c])/)) {
+      const trimmed = part.trim();
+      if (trimmed) {
+        segments.push(trimmed);
+      }
+    }
+  }
+  return segments;
+}

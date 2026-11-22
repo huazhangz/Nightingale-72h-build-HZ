@@ -55,6 +55,8 @@ export type TraceEvent =
       usage: UsageTotals;
     }
   | { type: "http_retry"; status: number }
+  /** A schema-valid terminal submission sent back for repair (problems: how many were listed). */
+  | { type: "repair"; step: number; problems: number }
   | {
       type: "tool_call";
       name: string;

@@ -17,6 +17,8 @@ export type HandoverAgentSettings = {
   deadlineMs: number;
   promptVersion: PromptVersion;
   fallbacks: "default" | null;
+  /** Repair rounds when a submission has citations that cannot be verified (0 disables). */
+  citationRepairs: number;
   /**
    * "anthropic" needs ANTHROPIC_API_KEY; "gemini" runs the same agents on Google Gemini through a
    * transport adapter and needs GEMINI_API_KEY; "simulated" is the offline rule policy for demos.
@@ -63,6 +65,7 @@ export function agentSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): Hand
     promptVersion: isPromptVersion(prompt) ? prompt : DEFAULT_PROMPT_VERSION,
     // Server-side refusal fallback is an Anthropic feature.
     fallbacks: client !== "anthropic" || env.NIGHTINGALE_AGENT_FALLBACKS === "off" ? null : "default",
+    citationRepairs: intFrom(env.NIGHTINGALE_AGENT_CITATION_REPAIRS, 1, 0, 3),
     client,
   };
 }

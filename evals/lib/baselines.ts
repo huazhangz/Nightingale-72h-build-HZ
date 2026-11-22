@@ -107,9 +107,11 @@ class OraclePolicy {
       }
       return message([toolUseBlock(TOOL_NAMES.notes, { note_ids: ids.slice(0, 8) })]);
     }
-    const notes = (results.get(TOOL_NAMES.notes) as Array<{ notes: Array<{ note_id: string; body: string | null }> }>)
+    // Quotable text is the body plus visible comments, exactly as the citation verifier sees it.
+    const notes = (results.get(TOOL_NAMES.notes) as Array<{ notes: Array<{ note_id: string; body: string | null; comments?: Array<{ body: string }> }> }>)
       .flatMap((result) => result.notes)
-      .filter((note): note is { note_id: string; body: string } => typeof note.body === "string");
+      .filter((note) => typeof note.body === "string")
+      .map((note) => ({ note_id: note.note_id, body: [note.body as string, ...(note.comments ?? []).map((comment) => comment.body)].join("\n") }));
     const bodyOf = new Map(notes.map((note) => [note.note_id, note.body]));
     const expect = this.materialized.expect;
 

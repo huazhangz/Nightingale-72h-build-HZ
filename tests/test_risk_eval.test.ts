@@ -44,7 +44,7 @@ describe("triage metrics", () => {
 describe("risk case set", () => {
   it("has unique ids, covers every stratum, and every evidence quote is verbatim in its note", () => {
     expect(new Set(RISK_CASES.map((item) => item.id)).size).toBe(RISK_CASES.length);
-    expect(new Set(RISK_CASES.map((item) => item.stratum))).toEqual(new Set(RISK_STRATA));
+    expect(new Set(RISK_CASES.map((item) => item.stratum))).toEqual(new Set(RISK_STRATA.filter((stratum) => stratum !== "challenge")));
     for (const item of RISK_CASES) {
       const source = item.notes.find((spec) => spec.key === item.evidence.noteKey);
       expect(source, item.id).toBeDefined();

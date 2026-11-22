@@ -45,6 +45,24 @@ export const HandoverSubmission = z.object({
 });
 
 export type HandoverSubmission = z.infer<typeof HandoverSubmission>;
+
+/** Evidence mode (handover-v5): a citation names a server-issued sentence id instead of quoting. */
+export const EvidenceCitationInput = z.object({
+  evidence_id: z.string().min(1).describe('An evidence id from get_notes, e.g. "N2.S3"'),
+});
+
+export const SummaryItemEvidenceInput = z.object({
+  category: z.enum(CATEGORIES),
+  severity: z.enum(SEVERITIES),
+  statement: z.string().min(1).max(400).describe("One short handover statement"),
+  citations: z.array(EvidenceCitationInput).min(1).max(3),
+});
+
+export const HandoverEvidenceSubmission = z.object({
+  items: z.array(SummaryItemEvidenceInput).max(20),
+});
+
+export type HandoverEvidenceSubmission = z.infer<typeof HandoverEvidenceSubmission>;
 export type SummaryItemInput = z.infer<typeof SummaryItemInput>;
 
 export type ItemFlag = "SEVERITY_UPGRADED" | "PHI_REDACTED";

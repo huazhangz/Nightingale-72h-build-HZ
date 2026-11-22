@@ -22,7 +22,9 @@
     "eval:risk:smoke": "tsx --conditions=react-server evals/risk/run.ts --variants rules,simulated,oracle --reps 1 --out evals/results/risk-smoke --assert-baselines",
     "agent:live-check": "tsx --conditions=react-server scripts/agent-live-check.ts",
     "eval:regrade": "tsx --conditions=react-server evals/regrade.ts",
-    "admin:create": "tsx --conditions=react-server scripts/create-admin.ts"
+    "admin:create": "tsx --conditions=react-server scripts/create-admin.ts",
+    "eval:export-labels": "tsx --conditions=react-server evals/labels.ts",
+    "eval:label-agreement": "NIGHTINGALE_LABELS_COMMAND=agreement tsx --conditions=react-server evals/labels.ts"
   },
   "prisma": {
     "seed": "tsx --conditions=react-server prisma/seed.ts"

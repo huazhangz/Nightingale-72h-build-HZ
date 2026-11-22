@@ -24,7 +24,7 @@ import type { NoteSpec } from "../cases/types";
  *                prompt never mentions; the honest check that tuning generalised
  */
 
-export const RISK_STRATA = ["red-flag", "context", "negation", "safety-net", "historical", "resolved", "injection", "routine", "holdout"] as const;
+export const RISK_STRATA = ["red-flag", "context", "negation", "safety-net", "historical", "resolved", "injection", "routine", "holdout", "challenge"] as const;
 export type RiskStratum = (typeof RISK_STRATA)[number];
 
 export type RiskCase = {
@@ -488,12 +488,96 @@ export const RISK_CASES: RiskCase[] = [
   },
 ];
 
+/**
+ * Challenge set (added 2026-11-22, after risk-v2): presentations of every severity that neither the
+ * core cases nor the prompt anchors cover. Kept apart from the frozen core set (RISK_CASES, hash
+ * pinned in tests/test_case_sets.test.ts) and reported separately.
+ */
+export const RISK_CHALLENGE_CASES: RiskCase[] = [
+  {
+    id: "rc-dka",
+    stratum: "challenge",
+    description: "Diabetic ketoacidosis picture in a type 1 diabetic.",
+    notes: [note("a", "Vomiting", "Type 1 diabetic vomiting since last night with abdominal pain and deep sighing breathing. Capillary glucose 28 mmol/L and blood ketones 4.2. Sent to the emergency department.")],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "Capillary glucose 28 mmol/L and blood ketones 4.2" },
+    provenance: "author",
+  },
+  {
+    id: "rc-asthma-severe",
+    stratum: "challenge",
+    description: "Acute severe asthma: cannot complete sentences, peak flow a third of best.",
+    notes: [note("a", "Wheeze", "Wheezy since this morning and unable to complete sentences. Peak flow 35% of best, SpO2 93% on air. Nebulised salbutamol given and ambulance called.")],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "unable to complete sentences. Peak flow 35% of best" },
+    provenance: "author",
+  },
+  {
+    id: "rc-ectopic",
+    stratum: "challenge",
+    description: "Possible ruptured ectopic pregnancy.",
+    notes: [note("a", "Pelvic pain", "Six weeks since last period with a positive pregnancy test. Right-sided pelvic pain since this morning and new shoulder-tip pain. Referred to the early pregnancy unit as an emergency.")],
+    gold: "CRITICAL",
+    evidence: { noteKey: "a", quote: "Right-sided pelvic pain since this morning and new shoulder-tip pain" },
+    provenance: "author",
+  },
+  {
+    id: "rc-pyelonephritis",
+    stratum: "challenge",
+    description: "Upper urinary tract infection unable to keep fluids down.",
+    notes: [note("a", "Loin pain", "Left loin pain with temperature 38.6 and rigors since yesterday. Vomiting and unable to keep fluids down. Heart rate 98, blood pressure 124/78.")],
+    gold: "HIGH",
+    evidence: { noteKey: "a", quote: "Vomiting and unable to keep fluids down" },
+    provenance: "author",
+  },
+  {
+    id: "rc-tia",
+    stratum: "challenge",
+    description: "Transient focal symptoms, fully resolved: needs same-day specialist assessment.",
+    notes: [note("a", "Transient weakness", "Ten-minute episode of right arm weakness and word-finding difficulty yesterday afternoon, fully resolved. Examination normal today. Started aspirin and referred to the TIA clinic.")],
+    gold: "HIGH",
+    evidence: { noteKey: "a", quote: "Ten-minute episode of right arm weakness and word-finding difficulty" },
+    provenance: "author",
+  },
+  {
+    id: "rc-gout",
+    stratum: "challenge",
+    description: "A typical gout flare, systemically well, treatment started.",
+    notes: [note("a", "Toe pain", "Hot swollen right big toe since yesterday, similar to previous gout flares. Afebrile and otherwise well. Colchicine started and review booked for next week.")],
+    gold: "MEDIUM",
+    evidence: { noteKey: "a", quote: "Hot swollen right big toe since yesterday, similar to previous gout flares" },
+    provenance: "author",
+  },
+  {
+    id: "rc-negated-bleed",
+    stratum: "challenge",
+    description: "Dyspepsia with every bleeding red flag denied.",
+    notes: [note("a", "Indigestion", "Mild indigestion after meals for a month. Denies black stools, vomiting blood or weight loss. Started omeprazole for four weeks.")],
+    gold: "LOW",
+    evidence: { noteKey: "a", quote: "Denies black stools, vomiting blood or weight loss" },
+    provenance: "author",
+  },
+  {
+    id: "rc-past-dvt",
+    stratum: "challenge",
+    description: "A past clot, treated, no current symptoms.",
+    notes: [note("a", "Travel advice", "History of DVT in 2019 with anticoagulation completed. No current leg swelling or pain. Travel advice given for a long-haul flight next month.")],
+    gold: "LOW",
+    evidence: { noteKey: "a", quote: "No current leg swelling or pain" },
+    provenance: "author",
+  },
+];
+
+/** No filter: the frozen core set. "challenge" or "all" select whole sets; otherwise ids or strata. */
 export function selectRiskCases(filter?: string): RiskCase[] {
-  if (!filter) {
+  if (!filter || filter === "core") {
     return RISK_CASES;
   }
+  if (filter === "all") {
+    return [...RISK_CASES, ...RISK_CHALLENGE_CASES];
+  }
   const wanted = new Set(filter.split(",").map((item) => item.trim()));
-  const selected = RISK_CASES.filter((item) => wanted.has(item.id) || wanted.has(item.stratum));
+  const selected = [...RISK_CASES, ...RISK_CHALLENGE_CASES].filter((item) => wanted.has(item.id) || wanted.has(item.stratum));
   if (selected.length === 0) {
     throw new Error(`No risk cases match "${filter}"`);
   }

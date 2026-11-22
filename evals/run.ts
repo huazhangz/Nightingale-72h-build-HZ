@@ -79,7 +79,9 @@ async function main(): Promise<number> {
     "gemini-v1": { id: "gemini-v1", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v1" },
     "gemini-v2": { id: "gemini-v2", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v2" },
     "gemini-v3": { id: "gemini-v3", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v3" },
-    "gemini-v4": { id: "gemini-v4", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v4" },
+    "gemini-v4": { id: "gemini-v4", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v4", citationRepairs: 0 },
+    "gemini-v5": { id: "gemini-v5", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v5" },
+    "gemini-v4-repair": { id: "gemini-v4-repair", kind: "gemini", model: values["gemini-model"]!, promptVersion: "handover-v4", citationRepairs: 1 },
     "claude-v3": { id: "claude-v3", kind: "anthropic", model, promptVersion: "handover-v3", effort },
     "gemini-lite-v2": { id: "gemini-lite-v2", kind: "gemini", model: "gemini-3.5-flash-lite", promptVersion: "handover-v2" },
   };

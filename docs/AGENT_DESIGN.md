@@ -32,6 +32,7 @@ The Anthropic SDK's Tool Runner owns the request → tool calls → tool results
 | Tools | Defined once as zod schemas (`defineTool`), converted with the SDK's JSON-schema transform and sent with `strict: true`, in a fixed order (part of the cached prefix). Inputs are `safeParse`d again before execution; failures return as `is_error` results the model can correct (`INVALID_INPUT`). |
 | Tool errors | Exceptions inside a tool never reach the model as raw text (the SDK would forward `Error: <message>`). They are wrapped in `ToolError` with a code and a safe message: tools raise `ToolInputError` for expected conditions (`INVALID_DATE`, `TOO_MANY_PROPOSALS`, `RESULT_TOO_LARGE`, …); anything else becomes `TOOL_FAILED` / "The tool failed unexpectedly." |
 | Terminal tool | Each agent has one terminal tool (`submit_risk_assessment`, `submit_handover_summary`). It is accepted only when called **alone** and with valid input; the run ends before the runner executes anything, so the terminal tool is never "run". A submission written next to other calls was composed before their results existed and is refused (`TERMINAL_NOT_ALONE`). |
+| Submit-time check and repair | A terminal tool may define a deterministic `check` (the handover agent checks that every citation verifies). If a schema-valid submission has problems and the run's repair budget (`maxRepairs`, handover default 1) is not spent, the run does not end: the model receives the exact problems ("item 3, citation 1: quote not found word-for-word in that note") as a `SUBMISSION_REPAIR` tool error and resubmits. When the budget is spent, or the run then stops without a better submission, the last valid submission is used and the guardrails decide as before. The validator is never relaxed; repair only gives the model a chance to fix what it would otherwise lose. Each round is a `repair` trace event. |
 | Stop conditions | `SUBMITTED`, `NO_SUBMISSION` (after one reminder), `STEP_LIMIT`, `BUDGET_EXCEEDED`, `DEADLINE`, `REFUSED`, `TRUNCATED`, `MODEL_ERROR` (with kind: `rate_limit`, `overloaded`, `auth`, `bad_request`, `server`, `connection`, …), `ABORTED`, `HARNESS_ERROR`. Infrastructure outcomes are kept apart from model behaviour so the evaluation never scores an outage as a wrong answer. |
 | Truncation | A turn that stops at `max_tokens` ends the run before its tools execute (a cut-off tool input can parse as a valid partial object). |
 | Retries | SDK-managed (`maxRetries: 3`, exponential backoff, `retry-after` honoured). The client's transport is wrapped to record every retried HTTP status as an `http_retry` trace event. |
@@ -169,7 +170,16 @@ HandoverPanel (Glance)                                   evals/run.ts
 
 **Writes need a human.** `create_followup` never touches the record. Proposals are stored only when the run succeeds and become `CareAction`s only when a clinician presses *Add to actions*, through the same RBAC, redaction and audit path as a manual entry.
 
-### 3.2 Guardrails
+### 3.2 Evidence ids (handover-v5)
+
+With `handover-v5` the record tools run in **evidence mode**: `get_notes` returns each note's visible text (body, then visible comments) as numbered sentences, `{"id": "N2.S3", "text": "…"}`, instead of a body to quote, and a citation is just `{ "evidence_id": "N2.S3" }`. The server resolves the id to the exact sentence text before the guardrails run, so everything downstream (verification, negation checks, display, grading) sees an ordinary verbatim quote.
+
+- **Why:** with free-text quotes, the remaining failures were quotes stitched from non-adjacent sentences or subtly altered (a token glitch, "from1" for "from"). With ids the model never retypes the record, so those failures are impossible by construction.
+- **What is still checked:** that the id was issued in this run (ids exist only for notes the run read; aliases follow read order, so they cannot point at unread notes), plus the unchanged checks on the resolved text. An unknown id is `UNKNOWN_EVIDENCE` and goes through the same repair round.
+- **What it does not prove:** that the cited sentence supports the statement. That is what coverage and assertion grading, negation-conflict checks and clinicians' review are for.
+- Earlier prompt versions keep quote mode; the mode follows the prompt version (`citationModeFor`).
+
+### 3.3 Guardrails
 
 1. **Citation verification** as in §1.2; an item with no surviving citation is rejected.
 2. **Negation conflict:** an item that affirms a red flag its own quotes only negate is rejected.
@@ -181,7 +191,7 @@ HandoverPanel (Glance)                                   evals/run.ts
 
 **Trade-off made explicit.** The floor trusts the rule engine, which over-alerts by design. On perfect answers it still adds ~1.2 false critical items per run on the seed notes (EVALUATION.md); that is the measured price of never silently dropping a red flag, reduced at the source (NegEx, historical and hypothetical rules), not by letting the model argue a flag away.
 
-### 3.3 Prompts
+### 3.4 Prompts
 
 `handover-v1` (short baseline) and `handover-v2` (workflow, exact-quote rules, how to read negation / safety-net advice / history, severity rubric, follow-up policy, data boundary). Each run stores the prompt version and content hash; which prompt is better is measured pairwise (EVALUATION.md §5).
 

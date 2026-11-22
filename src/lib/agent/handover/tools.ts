@@ -5,7 +5,9 @@ import { looksLikeInjectedInstruction } from "../shared/injection";
 import type { RecordContext } from "../shared/record-context";
 import { RECORD_TOOL_NAMES, recordTools } from "../shared/record-tools";
 import { normalizeForMatch } from "../shared/text";
-import { FOLLOWUP_KINDS, HandoverSubmission, type FollowupProposalDraft } from "./schema";
+import { checkCitation, resolveEvidence, UNKNOWN_EVIDENCE_PREFIX, type CitationRejection } from "../shared/citations";
+import type { EvidenceLedger } from "../shared/record-context";
+import { FOLLOWUP_KINDS, HandoverEvidenceSubmission, HandoverSubmission, type FollowupProposalDraft } from "./schema";
 
 export { MAX_NOTES_PER_CALL } from "../shared/record-tools";
 
@@ -92,6 +94,48 @@ const createFollowup = defineTool<
   },
 });
 
+const REASON_TEXT: Record<CitationRejection, string> = {
+  UNCITED: "has no citation",
+  UNKNOWN_NOTE: "cites a note_id that does not exist in this record",
+  UNREAD_NOTE: "cites a note you have not read with get_notes",
+  UNGROUNDED_QUOTE: "quote is not found word-for-word in that note (copy a contiguous passage exactly, or split it)",
+  QUOTE_TOO_SHORT: "quote is shorter than two words",
+  NEGATION_CONFLICT: "the statement contradicts its own negated quote",
+  INSTRUCTION_TEXT: "contains instruction-like text",
+  UNKNOWN_EVIDENCE: "evidence id was not issued by get_notes in this session",
+};
+
+/** Turn evidence-id citations into quote citations (exact segment text); unknown ids are marked. */
+export function resolveEvidenceSubmission(submission: HandoverEvidenceSubmission, ledger: EvidenceLedger): HandoverSubmission {
+  return {
+    items: submission.items.map((item) => ({
+      ...item,
+      citations: item.citations.map(
+        (citation) => resolveEvidence(citation.evidence_id, ledger) ?? { note_id: `${UNKNOWN_EVIDENCE_PREFIX}${citation.evidence_id}`, quote: citation.evidence_id },
+      ),
+    })),
+  };
+}
+
+/**
+ * Submit-time check (drives one repair round): every citation that would fail verification, named
+ * by item and citation, so the model can fix exactly those. The validator itself is unchanged; the
+ * same checks run again in the guardrails after the final submission.
+ */
+export function citationProblems(submission: HandoverSubmission, ledger: EvidenceLedger): string[] {
+  const problems: string[] = [];
+  submission.items.forEach((item, itemIndex) => {
+    item.citations.forEach((citation, citationIndex) => {
+      const check = checkCitation(citation, ledger);
+      if (!check.ok) {
+        const label = citation.note_id.startsWith(UNKNOWN_EVIDENCE_PREFIX) ? citation.quote : citation.note_id;
+        problems.push(`item ${itemIndex + 1} ("${item.statement.slice(0, 60)}"), citation ${citationIndex + 1} (${label}): ${REASON_TEXT[check.reason]}`);
+      }
+    });
+  });
+  return problems;
+}
+
 const submitSummary = defineTool<HandoverContext, HandoverSubmission>({
   name: TOOL_NAMES.submit,
   description:
@@ -100,6 +144,22 @@ const submitSummary = defineTool<HandoverContext, HandoverSubmission>({
     "quote copied from that note's body or comments. Statements without a verifiable quote are discarded.",
   terminal: true,
   schema: HandoverSubmission,
+  check: (input, context) => citationProblems(input, context.ledger),
+  async run() {
+    throw new Error("Terminal tools are never executed");
+  },
+});
+
+const submitSummaryEvidence = defineTool<HandoverContext, HandoverEvidenceSubmission>({
+  name: TOOL_NAMES.submit,
+  description:
+    "Submit the final handover summary and end the session. Call it exactly once, alone, after reading the " +
+    "notes. Each item is one short statement with 1-3 citations; each citation is an evidence_id from " +
+    "get_notes (e.g. \"N2.S3\") naming the sentence that supports the statement. Cite several ids for a " +
+    "statement drawn from several sentences. Statements without a valid evidence id are discarded.",
+  terminal: true,
+  schema: HandoverEvidenceSubmission,
+  check: (input, context) => citationProblems(resolveEvidenceSubmission(input, context.ledger), context.ledger),
   async run() {
     throw new Error("Terminal tools are never executed");
   },
@@ -109,4 +169,11 @@ export const HANDOVER_TOOLS: AgentTool<HandoverContext>[] = [
   ...recordTools<HandoverContext>(),
   createFollowup,
   submitSummary,
+];
+
+/** Evidence mode (handover-v5): same tools, submission cites server-issued sentence ids. */
+export const HANDOVER_EVIDENCE_TOOLS: AgentTool<HandoverContext>[] = [
+  ...recordTools<HandoverContext>(),
+  createFollowup,
+  submitSummaryEvidence,
 ];

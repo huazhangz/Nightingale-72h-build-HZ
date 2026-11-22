@@ -2,6 +2,7 @@ import type { Actor } from "../../auth/rbac";
 import type { GlanceTopCard } from "../../cache/glanceCache";
 import { getGlanceCard } from "../../care-note/glance";
 import { getPatientTimeline } from "../../care-note/timeline";
+import { segmentSentences } from "./text";
 /**
  * Everything one agent run may see. It is bound to a single actor and a single patient: tools read
  * through it and never receive a patient id from the model, so a prompt-injected note cannot steer
@@ -29,11 +30,38 @@ export type LedgerNote = {
 };
 
 /** What the model has actually been shown. Citations are verified against this, not the database. */
+export type EvidenceSegment = { id: string; noteId: string; text: string };
+
 export class EvidenceLedger {
   readonly surfacedNoteIds = new Set<string>();
   readonly surfacedHighlightIds = new Set<string>();
   readonly surfacedActionIds = new Set<string>();
   readonly readNotes = new Map<string, LedgerNote>();
+  /** Evidence mode: server-issued segment ids ("N2.S3") and the exact text each one stands for. */
+  readonly evidence = new Map<string, EvidenceSegment>();
+  private readonly noteAliases = new Map<string, string>();
+
+  /**
+   * Segment a read note's visible text (body, then visible comments) into sentences with stable ids
+   * for this run. The alias "N<k>" follows read order, so ids are short and cannot be guessed for
+   * notes the run has not read.
+   */
+  segmentsFor(noteId: string): EvidenceSegment[] {
+    const source = this.sourceText(noteId);
+    if (source === null) {
+      return [];
+    }
+    let alias = this.noteAliases.get(noteId);
+    if (!alias) {
+      alias = `N${this.noteAliases.size + 1}`;
+      this.noteAliases.set(noteId, alias);
+    }
+    return segmentSentences(source).map((text, index) => {
+      const segment = { id: `${alias}.S${index + 1}`, noteId, text };
+      this.evidence.set(segment.id, segment);
+      return segment;
+    });
+  }
 
   recordRead(note: LedgerNote): void {
     this.surfacedNoteIds.add(note.noteId);
@@ -51,6 +79,9 @@ export class EvidenceLedger {
 }
 
 export type RecordContext = {
+  /** "quote" (default): tools return note text and citations quote it. "evidence": tools return
+   * server-segmented sentences with ids, and citations name an id; the server supplies the text. */
+  citationMode?: "quote" | "evidence";
   actor: Actor;
   patientId: string;
   now: Date;

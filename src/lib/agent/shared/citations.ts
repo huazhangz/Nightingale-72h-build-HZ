@@ -18,7 +18,8 @@ export type CitationRejection =
   | "UNGROUNDED_QUOTE"
   | "QUOTE_TOO_SHORT"
   | "NEGATION_CONFLICT"
-  | "INSTRUCTION_TEXT";
+  | "INSTRUCTION_TEXT"
+  | "UNKNOWN_EVIDENCE";
 
 /** A citation that passed verification, enriched for display. */
 export type VerifiedCitation = {
@@ -30,7 +31,13 @@ export type VerifiedCitation = {
 
 export type CitationCheck = { ok: true; citation: VerifiedCitation } | { ok: false; reason: CitationRejection };
 
+/** Marker note id for an evidence id that did not resolve (see resolveEvidenceSubmission callers). */
+export const UNKNOWN_EVIDENCE_PREFIX = "unknown-evidence:";
+
 export function checkCitation(citation: { note_id: string; quote: string }, ledger: EvidenceLedger): CitationCheck {
+  if (citation.note_id.startsWith(UNKNOWN_EVIDENCE_PREFIX)) {
+    return { ok: false, reason: "UNKNOWN_EVIDENCE" };
+  }
   const note = ledger.readNotes.get(citation.note_id);
   if (!note) {
     return { ok: false, reason: ledger.surfacedNoteIds.has(citation.note_id) ? "UNREAD_NOTE" : "UNKNOWN_NOTE" };
@@ -54,6 +61,16 @@ export function checkCitation(citation: { note_id: string; quote: string }, ledg
       encounterAt: note.encounterAt,
     },
   };
+}
+
+/**
+ * Evidence mode: turn a server-issued segment id into the citation it stands for. The quote is the
+ * segment's exact text, so it verifies by construction; unknown ids return null (the caller reports
+ * UNKNOWN_EVIDENCE). Ids are issued only for notes this run read, so an id cannot point elsewhere.
+ */
+export function resolveEvidence(evidenceId: string, ledger: EvidenceLedger): { note_id: string; quote: string } | null {
+  const segment = ledger.evidence.get(evidenceId.trim().toUpperCase());
+  return segment ? { note_id: segment.noteId, quote: segment.text } : null;
 }
 
 /** Verify a list of citations: the valid ones (deduplicated) and the reasons the others failed. */

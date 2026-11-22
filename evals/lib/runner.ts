@@ -28,6 +28,8 @@ export type Variant = {
   promptVersion: PromptVersion;
   effort?: Effort;
   profile?: SimulationProfile;
+  /** Repair rounds for unverifiable citations (default: the agent setting, 1). */
+  citationRepairs?: number;
 };
 
 export type RunConfig = {
@@ -59,6 +61,8 @@ export type ResultRow = {
   modelLatencyMs: number;
   modelCalls: number;
   retries: number;
+  /** Submissions sent back for citation repair (0 when repair is off or not needed). */
+  repairs?: number;
   requestedModel: string;
   servedModel: string | null;
   fallbackUsed: boolean;
@@ -171,6 +175,7 @@ function rowFrom(
     modelLatencyMs: modelCalls.reduce((sum, event) => sum + (event.type === "model_turn" ? event.latencyMs : 0), 0),
     modelCalls: modelCalls.length,
     retries: result.internal.run.trace.filter((event) => event.type === "http_retry").length,
+    repairs: result.internal.run.trace.filter((event) => event.type === "repair").length,
     requestedModel: variant.model,
     servedModel: result.servedModel,
     fallbackUsed: result.fallbackUsed,
@@ -261,6 +266,12 @@ export async function runEvaluation(config: RunConfig): Promise<{ outDir: string
             model: variant.model,
             effort: variant.effort ?? "medium",
             fallbacks: variant.kind === "anthropic" ? "default" : null,
+            // Offline baselines are harness self-tests: they keep measuring single-shot behaviour.
+            ...(variant.citationRepairs !== undefined
+              ? { citationRepairs: variant.citationRepairs }
+              : LIVE_KINDS.has(variant.kind)
+                ? {}
+                : { citationRepairs: 0 }),
             deadlineMs: 240_000,
           },
           now: EVAL_NOW,

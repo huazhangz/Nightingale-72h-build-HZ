@@ -95,7 +95,7 @@ describe("handover agent", () => {
           ],
         }),
       ]);
-      const result = await runHandoverAgent(fixture.actors.staff, fixture.patient.id, { clientFactory: client.clientFactory });
+      const result = await runHandoverAgent(fixture.actors.staff, fixture.patient.id, { clientFactory: client.clientFactory, settings: { citationRepairs: 0 } }); // guardrail behaviour without the repair round
       const notesResult = client.requests[2]!.messages.at(-1)!.content as Array<{ content: string }>;
       const payload = JSON.parse(notesResult[0]!.content) as { notes: Array<{ note_id: string; body: string | null }> };
       const draft = payload.notes.find((note) => note.note_id === fixture.noteB.id);
@@ -145,7 +145,7 @@ describe("handover agent", () => {
           ],
         }),
       ]);
-      const result = await runHandoverAgent(fixture.actors.clinician, fixture.patient.id, { clientFactory: client.clientFactory });
+      const result = await runHandoverAgent(fixture.actors.clinician, fixture.patient.id, { clientFactory: client.clientFactory, settings: { citationRepairs: 0 } }); // guardrail behaviour without the repair round
 
       expect(result.status).toBe("SUCCEEDED");
       expect(result.guardrail.rejected.map((rejection) => rejection.reason)).toEqual([

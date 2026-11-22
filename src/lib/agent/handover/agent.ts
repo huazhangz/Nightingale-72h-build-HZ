@@ -7,9 +7,9 @@ import { executeAgent, failAgentRun, finishAgentRun } from "../shared/execute";
 import { createRecordContext, type EvidenceLedger } from "../shared/record-context";
 import { agentSettingsFromEnv, createClientFactory, type HandoverAgentSettings } from "./config";
 import { applyGuardrails, criticalFindingsFor, type CriticalFinding } from "./guardrails";
-import { handoverUserMessage, promptHash, systemPrompt, type PromptVersion } from "./prompts";
-import { HandoverSubmission, type GuardrailReport, type HandoverSummary } from "./schema";
-import { HANDOVER_TOOLS, type HandoverContext } from "./tools";
+import { citationModeFor, handoverUserMessage, promptHash, systemPrompt, type PromptVersion } from "./prompts";
+import { HandoverEvidenceSubmission, HandoverSubmission, type GuardrailReport, type HandoverSummary } from "./schema";
+import { HANDOVER_EVIDENCE_TOOLS, HANDOVER_TOOLS, resolveEvidenceSubmission, type HandoverContext } from "./tools";
 
 export const HANDOVER_AGENT = "handover";
 
@@ -89,7 +89,8 @@ export async function runHandoverAgent(
   const clientFactory = options.clientFactory ?? createClientFactory(settings);
   const promptVersion = options.promptVersion ?? settings.promptVersion;
   const now = options.now ?? new Date();
-  const context: HandoverContext = { ...createRecordContext(actor, patientId, now), proposals: [] };
+  const citationMode = citationModeFor(promptVersion);
+  const context: HandoverContext = { ...createRecordContext(actor, patientId, now), citationMode, proposals: [] };
 
   const { runId, result } = await executeAgent({
     agent: HANDOVER_AGENT,
@@ -109,8 +110,9 @@ export async function runHandoverAgent(
       deadlineMs: settings.deadlineMs,
       maxNudges: 1,
       fallbacks: settings.fallbacks,
+      maxRepairs: settings.citationRepairs,
     },
-    tools: HANDOVER_TOOLS,
+    tools: citationMode === "evidence" ? HANDOVER_EVIDENCE_TOOLS : HANDOVER_TOOLS,
     context,
     messages: [{ role: "user", content: handoverUserMessage({ readerRole: actor.role, today: now }) }],
     signal: options.signal,
@@ -119,7 +121,13 @@ export async function runHandoverAgent(
   try {
     const criticalFindings = criticalFindingsFor(await context.timeline());
     const submitted = result.outcome === "SUBMITTED";
-    const submission = submitted ? HandoverSubmission.parse(result.submission) : null;
+    // Evidence mode resolves ids to the exact sentence text here, so everything downstream (guardrails,
+    // display, grading) sees ordinary quote citations.
+    const submission = !submitted
+      ? null
+      : citationMode === "evidence"
+        ? resolveEvidenceSubmission(HandoverEvidenceSubmission.parse(result.submission), context.ledger)
+        : HandoverSubmission.parse(result.submission);
     // A failed run still yields the deterministic safety floor, so the reader is never left with nothing.
     const { items, report } = applyGuardrails({
       submission: submission ?? { items: [] },

@@ -53,6 +53,8 @@ export type VariantSummary = {
   latency: { p50WallS: number; p95WallS: number; p50ModelS: number; p95ModelS: number };
   meanSteps: number;
   retries: number;
+  /** Runs whose submission was sent back for citation repair at least once. */
+  repairRuns: number;
   byStratum: Record<string, { cases: number; passAt1: number }>;
   perCase: Record<string, { n: number; c: number; rate: number }>;
 };
@@ -163,6 +165,7 @@ export function summariseVariant(variant: string, rows: ResultRow[], errors: Err
     },
     meanSteps: perRun((row) => row.metrics.steps),
     retries: sum((row) => row.retries),
+    repairRuns: rows.filter((row) => (row.repairs ?? 0) > 0).length,
     byStratum,
     perCase: Object.fromEntries([...counts.entries()].map(([id, count]) => [id, { ...count, rate: count.c / count.n }])),
   };
@@ -281,15 +284,15 @@ export function renderMarkdown(input: {
 
   lines.push("## Cost and latency", "");
   lines.push(
-    "| Variant | Mean $/run | Total $ | Mean input tok | Mean output tok | Mean cache-read tok | p50 / p95 wall (s) | p50 / p95 model (s) | Mean steps | Retries | Refusals | Fallback runs |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Variant | Mean $/run | Total $ | Mean input tok | Mean output tok | Mean cache-read tok | p50 / p95 wall (s) | p50 / p95 model (s) | Mean steps | Retries | Citation repairs (runs) | Refusals | Fallback runs |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   );
   for (const summary of summaries) {
     lines.push(
       `| ${summary.variant} | ${summary.cost.meanUsd === null ? "n/a" : `$${summary.cost.meanUsd.toFixed(4)}`} | ` +
         `${summary.cost.totalUsd === null ? "n/a" : `$${summary.cost.totalUsd.toFixed(2)}`} | ${Math.round(summary.tokens.meanInput)} | ` +
         `${Math.round(summary.tokens.meanOutput)} | ${Math.round(summary.tokens.meanCacheRead)} | ${num(summary.latency.p50WallS, 1)} / ${num(summary.latency.p95WallS, 1)} | ` +
-        `${num(summary.latency.p50ModelS, 1)} / ${num(summary.latency.p95ModelS, 1)} | ${num(summary.meanSteps, 1)} | ${summary.retries} | ` +
+        `${num(summary.latency.p50ModelS, 1)} / ${num(summary.latency.p95ModelS, 1)} | ${num(summary.meanSteps, 1)} | ${summary.retries} | ${summary.repairRuns} | ` +
         `${summary.atomic.refusals} | ${summary.atomic.fallbackRuns} |`,
     );
   }
