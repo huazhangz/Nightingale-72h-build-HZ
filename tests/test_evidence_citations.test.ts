@@ -34,6 +34,20 @@ describe("sentence segments", () => {
   });
 });
 
+describe("malformed function calls (Gemini compatibility layer)", () => {
+  it("turn an empty MALFORMED_FUNCTION_CALL response into an explicit note in the history", async () => {
+    const { fromChatResponse } = await import("../src/lib/agent/core/openai-compat");
+    const message = fromChatResponse(
+      { choices: [{ finish_reason: "function_call_filter: MALFORMED_FUNCTION_CALL", message: {} }], usage: { prompt_tokens: 10, total_tokens: 10 } },
+      "m",
+      new Map(),
+      () => "x",
+    );
+    expect(message.stop_reason).toBe("end_turn");
+    expect((message.content[0] as { text: string }).text).toContain("malformed JSON");
+  });
+});
+
 describe("submit-time check and repair", () => {
   const submit = defineTool<{ seen: number }, { answer: string }>({
     name: "submit",
@@ -90,7 +104,7 @@ describe("handover-v5: evidence ids", () => {
   });
 
   it("returns numbered sentences, resolves ids to exact text, and repairs an unknown id", async () => {
-    let evidence: Array<{ id: string; text: string }> = [];
+    let evidence: Array<{ id: number; text: string }> = [];
     const { clientFactory, requests } = offline((request, index) => {
       if (index === 0) return assistantMessage([toolUseBlock(TOOL_NAMES.notes, { note_ids: [fixture.noteA.id] })]);
       if (index === 1) {
@@ -102,7 +116,7 @@ describe("handover-v5: evidence ids", () => {
           toolUseBlock(TOOL_NAMES.submit, {
             items: [
               { category: "critical_finding", severity: "critical", statement: "Exertional chest pain since Monday.", citations: [{ evidence_id: chest.id }] },
-              { category: "pending_action", severity: "warning", statement: "Troponin and ECG ordered today.", citations: [{ evidence_id: "N9.S9" }] },
+              { category: "pending_action", severity: "warning", statement: "Troponin and ECG ordered today.", citations: [{ evidence_id: 999 }] },
             ],
           }),
         ]);
@@ -113,7 +127,7 @@ describe("handover-v5: evidence ids", () => {
         toolUseBlock(TOOL_NAMES.submit, {
           items: [
             { category: "critical_finding", severity: "critical", statement: "Exertional chest pain since Monday.", citations: [{ evidence_id: chest.id }] },
-            { category: "pending_action", severity: "warning", statement: "Troponin and ECG ordered today.", citations: [{ evidence_id: plan.id.toLowerCase() }] },
+            { category: "pending_action", severity: "warning", statement: "Troponin and ECG ordered today.", citations: [{ evidence_id: plan.id }] },
           ],
         }),
       ]);
@@ -122,9 +136,9 @@ describe("handover-v5: evidence ids", () => {
     const result = await runHandoverAgent(fixture.actors.clinician, fixture.patient.id, { clientFactory, promptVersion: "handover-v5", settings: { citationRepairs: 1 } });
     expect(result.outcome).toBe("SUBMITTED");
     expect(evidence.length).toBeGreaterThan(1);
-    expect(evidence.every((segment) => /^N1\.S\d+$/.test(segment.id))).toBe(true);
+    expect(evidence.map((segment) => segment.id)).toEqual(evidence.map((_, index) => index + 1));
     const repairFeedback = lastToolResults(requests[2]!)[0]!.content;
-    expect(repairFeedback).toContain("N9.S9");
+    expect(repairFeedback).toContain("evidence 999");
     expect(repairFeedback).toContain("not issued by get_notes");
     expect(result.guardrail.rejected).toEqual([]);
     const model = result.summary.items.filter((item) => item.origin === "model");

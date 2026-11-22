@@ -156,8 +156,14 @@ export function fromChatResponse(response: ChatResponse, requestedModel: string,
     content.push({ type: "tool_use", id, name: call.function?.name ?? "unknown_tool", input } as BetaContentBlock);
   }
 
-  const hasToolUse = content.some((block) => block.type === "tool_use");
   const finish = choice?.finish_reason;
+  // Gemini's compatibility layer reports a function call it could not parse as an empty message with
+  // finish_reason "function_call_filter: MALFORMED_FUNCTION_CALL". Say so, so the history (and the
+  // runner's reminder) tells the model its call was not executed, instead of an empty turn.
+  if (content.length === 0 && typeof finish === "string" && finish.includes("MALFORMED_FUNCTION_CALL")) {
+    content.push({ type: "text", text: "(My previous function call was malformed JSON and was not executed.)", citations: null } as BetaContentBlock);
+  }
+  const hasToolUse = content.some((block) => block.type === "tool_use");
   const stopReason: BetaMessage["stop_reason"] =
     finish === "length" ? "max_tokens" : finish === "content_filter" ? "refusal" : hasToolUse ? "tool_use" : "end_turn";
 

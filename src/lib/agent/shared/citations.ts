@@ -68,8 +68,8 @@ export function checkCitation(citation: { note_id: string; quote: string }, ledg
  * segment's exact text, so it verifies by construction; unknown ids return null (the caller reports
  * UNKNOWN_EVIDENCE). Ids are issued only for notes this run read, so an id cannot point elsewhere.
  */
-export function resolveEvidence(evidenceId: string, ledger: EvidenceLedger): { note_id: string; quote: string } | null {
-  const segment = ledger.evidence.get(evidenceId.trim().toUpperCase());
+export function resolveEvidence(evidenceId: number | string, ledger: EvidenceLedger): { note_id: string; quote: string } | null {
+  const segment = ledger.evidence.get(typeof evidenceId === "number" ? evidenceId : Number.parseInt(evidenceId, 10));
   return segment ? { note_id: segment.noteId, quote: segment.text } : null;
 }
 

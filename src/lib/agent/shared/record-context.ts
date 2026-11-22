@@ -30,37 +30,42 @@ export type LedgerNote = {
 };
 
 /** What the model has actually been shown. Citations are verified against this, not the database. */
-export type EvidenceSegment = { id: string; noteId: string; text: string };
+export type EvidenceSegment = { id: number; noteId: string; text: string };
 
 export class EvidenceLedger {
   readonly surfacedNoteIds = new Set<string>();
   readonly surfacedHighlightIds = new Set<string>();
   readonly surfacedActionIds = new Set<string>();
   readonly readNotes = new Map<string, LedgerNote>();
-  /** Evidence mode: server-issued segment ids ("N2.S3") and the exact text each one stands for. */
-  readonly evidence = new Map<string, EvidenceSegment>();
-  private readonly noteAliases = new Map<string, string>();
+  /**
+   * Evidence mode: server-issued segment ids and the exact text each one stands for. Ids are plain
+   * integers (1, 2, 3, ...) in read order: a dotted string id ("N2.S3") led Gemini to emit malformed
+   * function calls (unquoted values) in the 2026-11-22 evaluation; integers are the safest JSON value.
+   */
+  readonly evidence = new Map<number, EvidenceSegment>();
+  private readonly segmentsByNote = new Map<string, EvidenceSegment[]>();
 
   /**
-   * Segment a read note's visible text (body, then visible comments) into sentences with stable ids
-   * for this run. The alias "N<k>" follows read order, so ids are short and cannot be guessed for
-   * notes the run has not read.
+   * Segment a read note's visible text (body, then visible comments) into sentences with ids that
+   * are stable for this run (re-reading a note returns the same ids). Ids exist only for notes the
+   * run has read, so they cannot point anywhere else.
    */
   segmentsFor(noteId: string): EvidenceSegment[] {
+    const cached = this.segmentsByNote.get(noteId);
+    if (cached) {
+      return cached;
+    }
     const source = this.sourceText(noteId);
     if (source === null) {
       return [];
     }
-    let alias = this.noteAliases.get(noteId);
-    if (!alias) {
-      alias = `N${this.noteAliases.size + 1}`;
-      this.noteAliases.set(noteId, alias);
-    }
-    return segmentSentences(source).map((text, index) => {
-      const segment = { id: `${alias}.S${index + 1}`, noteId, text };
+    const segments = segmentSentences(source).map((text) => {
+      const segment = { id: this.evidence.size + 1, noteId, text };
       this.evidence.set(segment.id, segment);
       return segment;
     });
+    this.segmentsByNote.set(noteId, segments);
+    return segments;
   }
 
   recordRead(note: LedgerNote): void {

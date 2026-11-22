@@ -48,7 +48,7 @@ export type HandoverSubmission = z.infer<typeof HandoverSubmission>;
 
 /** Evidence mode (handover-v5): a citation names a server-issued sentence id instead of quoting. */
 export const EvidenceCitationInput = z.object({
-  evidence_id: z.string().min(1).describe('An evidence id from get_notes, e.g. "N2.S3"'),
+  evidence_id: z.number().int().min(1).describe("An evidence id (an integer) from get_notes"),
 });
 
 export const SummaryItemEvidenceInput = z.object({

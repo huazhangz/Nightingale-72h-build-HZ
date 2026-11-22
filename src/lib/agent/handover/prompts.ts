@@ -101,9 +101,9 @@ const V4_EVIDENCE_RULES = V4.slice(V4.indexOf("<evidence_rules>"), V4.indexOf("<
 const V5 = V4.replace(
   V4_EVIDENCE_RULES,
   `<evidence_rules>
-- get_notes returns each note's text as numbered evidence sentences, e.g. {"id": "N2.S3", "text": "..."}.
+- get_notes returns each note's text as numbered evidence sentences, e.g. {"id": 12, "text": "..."}.
 - Each item states one fact in plain clinical language (at most ~30 words) and cites 1-3 evidence ids whose sentences directly support it.
-- Cite the id; do not copy or retype the sentence. Use only ids returned by get_notes in this session.
+- Cite the id as a plain integer, e.g. {"evidence_id": 12}; do not copy or retype the sentence. Use only ids returned by get_notes in this session.
 - A statement drawn from several sentences cites each of them. If no sentence supports a statement, leave the statement out.
 </evidence_rules>`,
 ).replace("2. Read every note that has a body available with get_notes.", "2. Read every note that has evidence available with get_notes.");

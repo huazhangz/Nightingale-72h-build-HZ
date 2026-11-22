@@ -252,6 +252,17 @@ What the runs show:
 
 Caveat: 28 author-labelled cases, one model. The holdout cases guard against the most obvious overfitting, but they were written by the same author as the anchors.
 
+## B4d. Challenge set (2026-11-22)
+
+The 28 core cases are now **frozen** (hash pinned in `tests/test_case_sets.test.ts`); new cases go to a separate **challenge set**, reported on its own, so the core numbers stay comparable and the test set does not drift towards the model. First challenge cases, written after `risk-v2`: DKA, acute severe asthma, possible ectopic pregnancy, pyelonephritis unable to keep fluids down, TIA, a gout flare, dyspepsia with every bleeding red flag denied, and a past DVT. 8 cases × 2 reps on `gemini-2.5-flash`. Report: [docs/eval/2026-11-22-risk-challenge.md](./eval/2026-11-22-risk-challenge.md).
+
+| Variant | exact | under-triage | over-triage |
+| --- | ---: | ---: | ---: |
+| `rules` | 25.0% | 75.0% | 0.0% |
+| `risk-v2` | 87.5% | **0.0%** | 12.5% |
+
+Both `risk-v2` misses are over-triage: pyelonephritis with rigors and vomiting rated CRITICAL (gold HIGH; the model reasoned towards sepsis) and the negated-bleed dyspepsia rated MEDIUM once (gold LOW). That is the trade `risk-v2` makes on purpose ("when two levels are defensible, choose the higher"): no under-triage on presentations it was not tuned on, at the cost of some over-triage. 8 cases is a signal, not an estimate; the label-review protocol ([LABEL_REVIEW.zh.md](./LABEL_REVIEW.zh.md)) and a larger challenge set are the next steps.
+
 ## B5. Running it
 
 ```bash

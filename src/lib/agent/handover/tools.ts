@@ -111,7 +111,11 @@ export function resolveEvidenceSubmission(submission: HandoverEvidenceSubmission
     items: submission.items.map((item) => ({
       ...item,
       citations: item.citations.map(
-        (citation) => resolveEvidence(citation.evidence_id, ledger) ?? { note_id: `${UNKNOWN_EVIDENCE_PREFIX}${citation.evidence_id}`, quote: citation.evidence_id },
+        (citation) =>
+          resolveEvidence(citation.evidence_id, ledger) ?? {
+            note_id: `${UNKNOWN_EVIDENCE_PREFIX}${citation.evidence_id}`,
+            quote: `evidence ${citation.evidence_id}`,
+          },
       ),
     })),
   };
@@ -154,8 +158,8 @@ const submitSummaryEvidence = defineTool<HandoverContext, HandoverEvidenceSubmis
   name: TOOL_NAMES.submit,
   description:
     "Submit the final handover summary and end the session. Call it exactly once, alone, after reading the " +
-    "notes. Each item is one short statement with 1-3 citations; each citation is an evidence_id from " +
-    "get_notes (e.g. \"N2.S3\") naming the sentence that supports the statement. Cite several ids for a " +
+    "notes. Each item is one short statement with 1-3 citations; each citation is an evidence_id (an integer " +
+    "from get_notes) naming the sentence that supports the statement. Cite several ids for a " +
     "statement drawn from several sentences. Statements without a valid evidence id are discarded.",
   terminal: true,
   schema: HandoverEvidenceSubmission,

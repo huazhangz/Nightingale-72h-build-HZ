@@ -120,7 +120,8 @@ function errorKind(error: APIError): string {
 function nudgeText(terminal: string[]): string {
   return (
     `You ended your turn without calling ${terminal.join(" or ")}. ` +
-    `Finish now by calling ${terminal[0]} with your final result. Do not reply in plain text.`
+    `Finish now by calling ${terminal[0]} with your final result, with arguments that are valid JSON ` +
+    `matching its schema. Do not reply in plain text.`
   );
 }
 
