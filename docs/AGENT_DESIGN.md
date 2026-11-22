@@ -172,12 +172,13 @@ HandoverPanel (Glance)                                   evals/run.ts
 
 ### 3.2 Evidence ids (handover-v5)
 
-With `handover-v5` the record tools run in **evidence mode**: `get_notes` returns each note's visible text (body, then visible comments) as numbered sentences, `{"id": "N2.S3", "text": "…"}`, instead of a body to quote, and a citation is just `{ "evidence_id": "N2.S3" }`. The server resolves the id to the exact sentence text before the guardrails run, so everything downstream (verification, negation checks, display, grading) sees an ordinary verbatim quote.
+With `handover-v5` the record tools run in **evidence mode**: `get_notes` returns each note's visible text (body, then visible comments) as numbered sentences, `{"id": 12, "text": "…"}`, instead of a body to quote, and a citation is just `{ "evidence_id": 12 }`. (Ids were dotted strings, "N2.S3", in the first version; Gemini produced malformed function calls with them, see EVALUATION §7.4.) The server resolves the id to the exact sentence text before the guardrails run, so everything downstream (verification, negation checks, display, grading) sees an ordinary verbatim quote.
 
 - **Why:** with free-text quotes, the remaining failures were quotes stitched from non-adjacent sentences or subtly altered (a token glitch, "from1" for "from"). With ids the model never retypes the record, so those failures are impossible by construction.
-- **What is still checked:** that the id was issued in this run (ids exist only for notes the run read; aliases follow read order, so they cannot point at unread notes), plus the unchanged checks on the resolved text. An unknown id is `UNKNOWN_EVIDENCE` and goes through the same repair round.
+- **What is still checked:** that the id was issued in this run (ids are assigned in read order to notes the run read, so they cannot point at unread notes), plus the unchanged checks on the resolved text. An unknown id is `UNKNOWN_EVIDENCE` and goes through the same repair round.
 - **What it does not prove:** that the cited sentence supports the statement. That is what coverage and assertion grading, negation-conflict checks and clinicians' review are for.
 - Earlier prompt versions keep quote mode; the mode follows the prompt version (`citationModeFor`).
+- **Status:** not the default. With Gemini 2.5 Flash it removed quote errors entirely but caused malformed function calls on long records (EVALUATION §7.4); `handover-v4` with the repair round is the default until evidence mode is measured on a model with strict tool schemas.
 
 ### 3.3 Guardrails
 

@@ -141,6 +141,29 @@ How to read it:
 
 Total live spend for every Gemini run on 2026-11-21 (live checks, both evaluations, two optimisation rounds): **$3.34** under the $4.50 hard cap.
 
+### 7.4 Round 2: citation reliability and a challenge set (2026-11-22)
+
+Prompted by an external review (P0: citation reliability; P1: ground-truth credibility). Two mechanisms, both keeping the validator exactly as strict:
+
+- **Submit-time repair** (all prompt versions): a submission whose citations do not verify goes back to the model once with the exact problems, instead of the items being silently dropped (AGENT_DESIGN §1.1).
+- **Evidence ids** (`handover-v5`): `get_notes` returns numbered sentences; citations name an id and the server supplies the exact words (AGENT_DESIGN §3.2).
+
+The handover core set (20 cases) is frozen and pinned by hash; a separate **challenge set** of 10 cases targets citation stress (facts split across sentences, near-identical wording across notes, long negated lists, typos, numbers and units, typographic punctuation, a long note, a fact only in a comment) and turns two earlier failures into regression tests. All runs on `gemini-2.5-flash`. Reports: [v4+repair vs v5](./eval/2026-11-22-handover-v5-core.md), [challenge](./eval/2026-11-22-handover-v5-challenge.md), [v5 with integer ids: core](./eval/2026-11-22-handover-v5b-core.md), [challenge](./eval/2026-11-22-handover-v5b-challenge.md).
+
+| Variant | Core pass@1 (20 × 2) | Core FABRICATION | Core NO_SUBMISSION | Challenge pass@1 (10 × 2) | $ / run |
+| --- | --- | ---: | ---: | --- | ---: |
+| v4, no repair (§7.3, 20 × 3) | 81.7% | 15.0% | 3.3% | 90.0% | $0.0084 |
+| **v4 + repair** (default) | **97.5%** [92.3, 100] | **2.5%** | 0.0% | **95.0%** | $0.0096 |
+| v5, string ids "N2.S3" | 37.5% | 0.0% | 60.0% | 70.0% | $0.0044 |
+| v5, integer ids | 77.5% [63.3, 91.7] | 7.5% | 12.5% | 95.0% | $0.0063 |
+
+- **Repair is the measured win.** v4 + repair vs v4 without, paired by case across the two runs: **+15.8 points** (bootstrap CI [5.0, 29.2], permutation p = 0.016). 8 of 40 runs needed a repair round and 7 of those then passed; one core run still failed on a citation. Required-fact coverage stayed at 100%. `handover-v4` with one repair round is the default.
+- **Evidence ids removed quote errors entirely but exposed a provider limit.** No v5 run had an unverifiable quote. But Gemini emitted malformed function calls (finish reason `MALFORMED_FUNCTION_CALL`, confirmed by replaying a failing request; the OpenAI-compatible layer reports it as an empty turn) in 60% of runs with dotted string ids. Plain integer ids and an explicit "your call was malformed" note brought that down to 12.5%, still too high on long seeded notes. Evidence mode stays available (`handover-v5`); it should be re-tested on a model with strict tool schemas (Claude) before being made the default.
+- **A guardrail false rejection, found and fixed.** v5's remaining citation failures were not quote errors but `NEGATION_CONFLICT` on correct pertinent negatives such as "Patient denies chest pain, shortness of breath, fever, and nausea": the engine ends negation scope at ", and", so the last list item read as affirmed. The conflict check now treats an item that directly follows a negated item, joined only by commas, "and" or "or", as part of the negated list; real conflicts ("has chest pain" citing "denies chest pain", "denies fever but reports nausea", "no fever, and new chest pain") are still rejected (regression tests). The engine and the risk floor are unchanged.
+- **Challenge set:** v4 + repair and v5 both pass 95%; v4 without repair 90%. The two regressions (safety-net advice, negative suicide screen) pass with the current prompts.
+
+Total live spend after round 2: **$4.56** of the $5 budget (hard cap $4.90).
+
 ### 7.2 Claude
 
 Not yet run: needs an Anthropic API key. At 20 cases × 5 reps × 2 prompts on `claude-opus-5-5` the pre-flight estimate is about $36.

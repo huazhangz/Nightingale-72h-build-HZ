@@ -149,3 +149,14 @@ describe("handover-v5: evidence ids", () => {
     expect(model[1]!.citations[0]!.quote.startsWith("Plan")).toBe(true);
   });
 });
+
+describe("negation-conflict check on negated lists (found in the 2026-11-22 evaluation)", () => {
+  it("accepts an Oxford-comma pertinent negative, still rejects real conflicts", async () => {
+    const { negationConflict } = await import("../src/lib/agent/shared/citations");
+    const quote = ["Patient denies chest pain, shortness of breath, fever or nausea."];
+    expect(negationConflict("Patient denies chest pain, shortness of breath, fever, and nausea.", quote)).toBeNull();
+    expect(negationConflict("Patient has chest pain.", quote)).toBe("chest pain");
+    expect(negationConflict("Denies fever but reports nausea.", quote)).toBe("nausea");
+    expect(negationConflict("No cough, no fever, and new chest pain.", ["Denies chest pain."])).toBe("chest pain");
+  });
+});

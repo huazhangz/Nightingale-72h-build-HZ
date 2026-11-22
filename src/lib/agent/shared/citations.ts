@@ -96,8 +96,30 @@ export function verifyCitations(
  * in its own quotes is negated ("denies chest pain"). Deterministic, conservative: if a quote does not
  * mention the phrase at all, no judgement is made.
  */
+/**
+ * Mentions the statement affirms, ignoring the last item of a negated list. The engine ends negation
+ * scope at ", and" ("fever without hyperpyrexia, and nausea" affirms nausea), which also reads
+ * "denies chest pain, shortness of breath, fever, and nausea" as affirming nausea. A mention whose
+ * nearest preceding mention is negated and separated from it only by commas, "and" or "or" is
+ * treated as part of that list. Found in the 2026-11-22 evaluation, where this rejected a correct
+ * pertinent negative. The engine itself (and so the risk floor) is unchanged.
+ */
+function affirmedOutsideNegatedLists(text: string): ReturnType<typeof findTermMentions> {
+  const mentions = findTermMentions(text).sort((left, right) => left.startOffset - right.startOffset);
+  return mentions.filter((mention, index) => {
+    if (mention.context !== "AFFIRMED") {
+      return false;
+    }
+    const previous = mentions[index - 1];
+    if (!previous || previous.context !== "NEGATED") {
+      return true;
+    }
+    return !/^[\s,;]*(?:(?:and|or)[\s,]*)?$/i.test(text.slice(previous.endOffset, mention.startOffset));
+  });
+}
+
 export function negationConflict(statement: string, quotes: string[]): string | null {
-  const affirmed = findTermMentions(statement).filter((mention) => mention.context === "AFFIRMED");
+  const affirmed = affirmedOutsideNegatedLists(statement);
   for (const mention of affirmed) {
     const quoteMentions = quotes.flatMap((quote) =>
       findTermMentions(quote).filter((item) => item.termKey === mention.termKey),

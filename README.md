@@ -76,7 +76,7 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
-**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21): after one round of prompt optimisation, the risk agent (`risk-v2`) rates 96.4% of 84 trials at the exact level with **no under-triage**, including 7 holdout cases written after the tuning (rule floor alone: 46.4% exact, 50% under-triage). The handover agent (`handover-v4`) passes about 82% of runs, with full coverage of required facts in most runs, no false assertions and zero leakage; its remaining failures are quotes the citation guardrail rejects ([EVALUATION.md](./docs/EVALUATION.md) §7.3). Claude runs are pending an Anthropic key.
+**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21/22): after one round of prompt optimisation, the risk agent (`risk-v2`) rates 96.4% of 84 trials at the exact level with **no under-triage**, including 7 holdout cases written after the tuning (rule floor alone: 46.4% exact, 50% under-triage). The handover agent (`handover-v4` with one citation-repair round) passes 97.5% of core runs and 95% of the challenge set, with 100% required-fact coverage and zero leakage; free-text quote errors are repaired or rejected, never shown ([EVALUATION.md](./docs/EVALUATION.md) §7.4).
 
 ---
 
@@ -111,7 +111,7 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    npx vitest run
    ```
 
-   **200 / 200** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **209 / 209** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
@@ -162,7 +162,7 @@ Re-running it for the same email resets the password, re-activates the account a
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 200 / 200 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 209 / 209 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -311,7 +311,7 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **200 / 200** passing |
+| `npm run test` or `npx vitest run` | **209 / 209** passing |
 | `npm run typecheck` | 0 errors |
 | `npm run build` | passes |
 | `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |
@@ -341,6 +341,7 @@ Coverage includes:
 - [docs/EVALUATION.md](./docs/EVALUATION.md) — evaluation method, statistics, baseline results for both agents
 - [docs/SECURITY.md](./docs/SECURITY.md) — accounts, sessions, authorization, browser protections, PHI, known gaps
 - [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md) — live-API test plan with cost gates (Chinese)
+- [docs/LABEL_REVIEW.zh.md](./docs/LABEL_REVIEW.zh.md) — frozen core vs challenge sets, blind clinician label review and agreement (Chinese)
 - [docs/UPGRADE_PLAN.zh.md](./docs/UPGRADE_PLAN.zh.md) — upgrade plan (Chinese)
 - [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md) — architecture, highlight engine, CareAction, RBAC, trade-offs
 - [docs/CLINICAL_HIGHLIGHT_RULES.txt](./docs/CLINICAL_HIGHLIGHT_RULES.txt) — highlight ontology
