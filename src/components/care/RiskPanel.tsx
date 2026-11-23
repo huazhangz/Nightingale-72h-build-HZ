@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { apiFetch, ApiError } from "../../lib/api/client";
 import { useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
-import { subscribePatientRefresh } from "../../lib/events/patientRefresh";
+import { notifyEntryChanged, subscribePatientRefresh } from "../../lib/events/patientRefresh";
 import type { PatientRiskView } from "../../lib/agent/risk/repository";
 import { Notice, RiskBadge } from "../ui/RiskBadge";
 
@@ -26,7 +26,7 @@ export function RiskPanel({ patientId, role }: { patientId: string; role: string
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [overriding, setOverriding] = useState(false);
-  const [level, setLevel] = useState<(typeof LEVELS)[number]>("HIGH");
+  const [level, setLevel] = useState<(typeof LEVELS)[number] | "CLEAR">("HIGH");
   const [reason, setReason] = useState("");
   const canOverride = role === "CLINICIAN" || role === "ADMIN";
 
@@ -43,7 +43,10 @@ export function RiskPanel({ patientId, role }: { patientId: string; role: string
     setView(null);
     void load();
     // A saved note queues a new assessment: refresh so "running" shows straight away.
-    return subscribePatientRefresh(patientId, () => void load());
+    // Ignore the panel's own "risk" notifications: it already holds the server's answer.
+    return subscribePatientRefresh(patientId, (payload) => {
+      if (payload.entryId !== "risk") void load();
+    });
   }, [patientId, load]);
 
   useEffect(() => {
@@ -57,6 +60,7 @@ export function RiskPanel({ patientId, role }: { patientId: string; role: string
     setError(null);
     try {
       setView(await apiFetch<PatientRiskView>(`/api/patients/${patientId}/risk`, { method: "POST", body: {} }));
+      notifyEntryChanged({ patientId, entryId: "risk", reason: "updated" });
     } catch (caught) {
       setError(caught instanceof ApiError && caught.status === 429 ? t("handover.rateLimited") : caught instanceof Error ? caught.message : t("riskPanel.error"));
     } finally {
@@ -72,6 +76,7 @@ export function RiskPanel({ patientId, role }: { patientId: string; role: string
       setView(await apiFetch<PatientRiskView>(`/api/patients/${patientId}/risk/override`, { method: "POST", body: { level, reason } }));
       setOverriding(false);
       setReason("");
+      notifyEntryChanged({ patientId, entryId: "risk", reason: "updated" });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : t("riskPanel.error"));
     } finally {
@@ -102,11 +107,14 @@ export function RiskPanel({ patientId, role }: { patientId: string; role: string
           {assessment.summary ? <p className="risk-summary">{assessment.summary}</p> : null}
           {assessment.override ? (
             <Notice>
-              {t("riskPanel.overridden", {
-                level: t(`risk.level.${assessment.override.level}` as MessageKey),
-                name: assessment.override.by ?? "—",
-                reason: assessment.override.reason,
-              })}
+              <span>
+                {t("riskPanel.overridden", {
+                  level: t(`risk.level.${assessment.override.level}` as MessageKey),
+                  name: assessment.override.by ?? "—",
+                  reason: assessment.override.reason,
+                })}
+              </span>{" "}
+              <span className="muted small">{t("riskPanel.overrideKept")}</span>
             </Notice>
           ) : null}
           {assessment.report?.floorApplied && assessment.modelLevel ? (
@@ -157,12 +165,13 @@ export function RiskPanel({ patientId, role }: { patientId: string; role: string
               <form className="risk-override" onSubmit={(event) => void saveOverride(event)}>
                 <div className="field">
                   <label htmlFor="risk-override-level">{t("riskPanel.override")}</label>
-                  <select id="risk-override-level" value={level} onChange={(event) => setLevel(event.target.value as (typeof LEVELS)[number])}>
+                  <select id="risk-override-level" value={level} onChange={(event) => setLevel(event.target.value as (typeof LEVELS)[number] | "CLEAR")}>
                     {LEVELS.map((value) => (
                       <option key={value} value={value}>
                         {t(`risk.level.${value}` as MessageKey)}
                       </option>
                     ))}
+                    {assessment.override ? <option value="CLEAR">{t("riskPanel.clearOverride")}</option> : null}
                   </select>
                 </div>
                 <div className="field">

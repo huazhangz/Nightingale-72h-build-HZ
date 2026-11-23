@@ -151,3 +151,19 @@ describe("seeded clinical notes (regression)", () => {
     }
   });
 });
+
+describe("v1.2 resolution demotion", () => {
+  const context = (text: string, term: string) => findTermMentions(text).find((mention) => mention.termKey === `term:${term}`)?.context;
+
+  it("demotes a phrase directly followed by a past-tense resolution verb", () => {
+    expect(context("The fever resolved four days ago and she is back at work.", "fever")).toBe("HISTORICAL");
+    expect(context("Chest pain has settled since yesterday.", "chest pain")).toBe("HISTORICAL");
+    expect(context("Chest pain now resolved; new shortness of breath.", "shortness of breath")).toBe("AFFIRMED");
+  });
+
+  it("keeps present tense, negation and distant mentions affirmed", () => {
+    expect(context("Two weeks of chest pain on exertion that settles with rest.", "chest pain")).toBe("AFFIRMED");
+    expect(context("Fever has not resolved despite paracetamol.", "fever")).toBe("AFFIRMED");
+    expect(context("Chest pain, which resolved after GTN, recurred at rest.", "chest pain")).toBe("AFFIRMED");
+  });
+});

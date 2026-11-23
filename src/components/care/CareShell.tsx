@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch, ApiError, UNAUTHORIZED_EVENT } from "../../lib/api/client";
+import { careEvents } from "../../lib/events/bus";
 import { useI18n } from "../../lib/i18n/I18nContext";
 import type { MessageKey } from "../../lib/i18n/messages";
 import { RiskBadge, type RiskLevelValue } from "../ui/RiskBadge";
@@ -115,6 +116,14 @@ export function CareShell({ children }: { children: ReactNode }) {
       void refreshPatients().catch((caught: unknown) => setError(caught instanceof Error ? caught.message : t("auth.genericError")));
     }
   }, [user, refreshPatients, t]);
+
+  // Notes, reassessments and overrides change levels: keep the header picker in step.
+  useEffect(() => {
+    if (!user || !isClinicalRole(user.role)) return;
+    return careEvents.on("entry:changed", () => {
+      void refreshPatients().catch(() => undefined);
+    });
+  }, [user, refreshPatients]);
 
   const fromUrl = searchParams?.get("patient") ?? "";
   // A ?patient= link selects that patient once, when the link changes; the picker can override it.

@@ -156,9 +156,24 @@ export async function runRiskAssessment(assessmentId: string, options: RunRiskOp
       result = ruleBasedAssessment(floor, "no_model");
     }
 
+    // A clinician's override is a clinical judgement: it carries forward to new assessments until
+    // the record changes after it (a new or edited note) or a clinician clears it. A reassessment of
+    // the same record must not silently drop it.
+    const carryOverride =
+      previous?.overrideLevel && previous.overriddenAt
+        ? (await prisma.careEntry.count({ where: { patientId: row.patientId, updatedAt: { gt: previous.overriddenAt } } })) === 0
+        : false;
     const completed = await prisma.riskAssessment.update({
       where: { id: row.id },
       data: {
+        ...(carryOverride
+          ? {
+              overrideLevel: previous!.overrideLevel,
+              overrideReason: previous!.overrideReason,
+              overriddenById: previous!.overriddenById,
+              overriddenAt: previous!.overriddenAt,
+            }
+          : {}),
         status: "COMPLETED",
         inputHash,
         method: result.method,

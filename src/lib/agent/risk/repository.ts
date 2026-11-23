@@ -145,8 +145,10 @@ export async function overridePatientRisk(
     throw new ForbiddenError("Only clinicians can override a risk level");
   }
   await patientInScope(actor, patientId);
-  if (!(RISK_LEVELS as readonly string[]).includes(input.level)) {
-    throw new HttpError(400, "INVALID_LEVEL", "level must be LOW, MEDIUM, HIGH or CRITICAL");
+  // "CLEAR" removes the override (with a reason, audited); the assessed level applies again.
+  const clearing = input.level === "CLEAR";
+  if (!clearing && !(RISK_LEVELS as readonly string[]).includes(input.level)) {
+    throw new HttpError(400, "INVALID_LEVEL", "level must be LOW, MEDIUM, HIGH, CRITICAL or CLEAR");
   }
   const reason = redactPhi(input.reason.trim());
   if (reason.length < 5 || reason.length > 500) {
@@ -156,12 +158,23 @@ export async function overridePatientRisk(
   if (!latest) {
     throw new HttpError(409, "NO_ASSESSMENT", "There is no completed assessment to override yet");
   }
+  if (clearing && !latest.overrideLevel) {
+    throw new HttpError(409, "NO_OVERRIDE", "There is no override to clear");
+  }
   await prisma.riskAssessment.update({
     where: { id: latest.id },
-    data: { overrideLevel: input.level as RiskLevel, overrideReason: reason, overriddenById: actor.id, overriddenAt: new Date() },
+    data: clearing
+      ? { overrideLevel: null, overrideReason: null, overriddenById: null, overriddenAt: null }
+      : { overrideLevel: input.level as RiskLevel, overrideReason: reason, overriddenById: actor.id, overriddenAt: new Date() },
   });
   await prisma.auditLog.create({
-    data: { actorId: actor.id, action: "RISK_OVERRIDE", entityType: "RiskAssessment", entityId: latest.id, metadata: { userId: actor.id } },
+    data: {
+      actorId: actor.id,
+      action: clearing ? "RISK_OVERRIDE_CLEARED" : "RISK_OVERRIDE",
+      entityType: "RiskAssessment",
+      entityId: latest.id,
+      metadata: { userId: actor.id, ...(clearing ? { previousLevel: latest.overrideLevel, reason } : {}) },
+    },
   });
   return getPatientRisk(actor, patientId);
 }

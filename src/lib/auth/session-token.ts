@@ -1,4 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 /**
  * Stateless signed session tokens (HMAC-SHA256), issued at login and carried in an HttpOnly cookie.
@@ -20,7 +22,40 @@ export type SessionPayload = {
   exp: number;
 };
 
-let devSecret: string | null = null;
+export const DEV_SECRET_FILE = ".nightingale-dev-secret";
+
+/**
+ * Development / test secret, used when NIGHTINGALE_SESSION_SECRET is not set (never in production).
+ * It must be one value for the whole server: `next dev` compiles each route separately, so a
+ * module-level random value differed between /api/auth/login and /api/auth/me and every session was
+ * rejected (the app bounced back to /login). The secret is therefore kept on globalThis and in a
+ * git-ignored file in the working directory, so all routes and restarts share it. If the file
+ * cannot be written, a process-wide random value is used.
+ */
+function developmentSecret(): string {
+  const holder = globalThis as unknown as { nightingaleDevSecret?: string };
+  if (holder.nightingaleDevSecret) {
+    return holder.nightingaleDevSecret;
+  }
+  const file = path.resolve(process.cwd(), DEV_SECRET_FILE);
+  let secret: string | null = null;
+  try {
+    const stored = readFileSync(file, "utf8").trim();
+    secret = stored.length >= 32 ? stored : null;
+  } catch {
+    secret = null;
+  }
+  if (!secret) {
+    secret = randomBytes(32).toString("hex");
+    try {
+      writeFileSync(file, `${secret}\n`, { mode: 0o600 });
+    } catch {
+      // Read-only working directory: the process-wide value still keeps routes consistent.
+    }
+  }
+  holder.nightingaleDevSecret = secret;
+  return secret;
+}
 
 function sessionSecret(): string {
   const configured = process.env.NIGHTINGALE_SESSION_SECRET;
@@ -30,9 +65,7 @@ function sessionSecret(): string {
   if (process.env.NODE_ENV === "production") {
     throw new Error("NIGHTINGALE_SESSION_SECRET must be set (>= 32 chars) in production");
   }
-  // Development / test: a per-process random secret. Sessions do not survive a restart, by design.
-  devSecret ??= randomBytes(32).toString("hex");
-  return devSecret;
+  return developmentSecret();
 }
 
 function base64url(input: Buffer | string): string {

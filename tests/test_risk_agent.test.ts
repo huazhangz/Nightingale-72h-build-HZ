@@ -214,4 +214,27 @@ describe("risk triage agent", () => {
     expect(JSON.stringify(worklist)).not.toMatch(/service\.nightingale\.internal/);
     await expect(listWorklist(fixture.actors.patient)).rejects.toBeInstanceOf(ForbiddenError);
   });
+
+  it("keeps an override through reassessment of the same record, drops it after a new note, and lets a clinician clear it", async () => {
+    await drainRiskQueue({ rulesOnly: true });
+    await overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "CRITICAL", reason: "Ongoing pain on arrival" });
+
+    // Same record, reassessed: the clinician's judgement must not silently disappear.
+    const again = await requestRiskAssessment(fixture.actors.clinician, fixture.patient.id, { rulesOnly: true });
+    expect(again.assessment).toMatchObject({ level: "CRITICAL", assessedLevel: "MEDIUM", override: { level: "CRITICAL", reason: "Ongoing pain on arrival" } });
+
+    // Clearing needs a reason, is audited, and restores the assessed level.
+    await expect(overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "CLEAR", reason: "" })).rejects.toMatchObject({ status: 400 });
+    const cleared = await overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "CLEAR", reason: "Reassessed at bedside" });
+    expect(cleared.assessment).toMatchObject({ level: "MEDIUM", override: null });
+    await expect(overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "CLEAR", reason: "Nothing to clear" })).rejects.toMatchObject({ status: 409 });
+
+    // New clinical information: the next assessment starts without the old override.
+    await overridePatientRisk(fixture.actors.clinician, fixture.patient.id, { level: "CRITICAL", reason: "Ongoing pain on arrival" });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await createCareEntry(fixture.actors.clinician, { patientId: fixture.patient.id, title: "Review", body: "Pain settled after GTN; ECG unchanged." });
+    await drainRiskQueue({ rulesOnly: true });
+    const after = await getPatientRisk(fixture.actors.clinician, fixture.patient.id);
+    expect(after.assessment?.override).toBeNull();
+  });
 });

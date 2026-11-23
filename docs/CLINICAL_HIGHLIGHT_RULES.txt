@@ -1,5 +1,5 @@
 ===============================================================================
-NIGHTINGALE CLINICAL DETERMINISTIC HIGHLIGHTING SPECIFICATION v1.1
+NIGHTINGALE CLINICAL DETERMINISTIC HIGHLIGHTING SPECIFICATION v1.2
 ===============================================================================
 
 1. ONTOLOGY & RISK TIER MAPPING
@@ -69,6 +69,16 @@ pastel UI themes to prevent alert fatigue:
 - Safety bias: context rules only ever demote inside the tight five-word window.
   When the window does not settle it, the engine keeps the higher tier. Over-
   alerting is the accepted failure direction; silent demotion is not.
+
+- Resolution demotion (new in v1.2): a phrase IMMEDIATELY followed by a
+  past-tense resolution verb is HISTORICAL: "the fever resolved four days
+  ago", "chest pain has settled", "now resolved", "fully subsided". Only
+  "resolved", "settled" and "subsided", optionally after has / had / have /
+  now / fully / completely. Not demoted: present tense ("pain that settles
+  with rest", a typical exertional pattern), negation ("has not resolved"),
+  and anything further away ("chest pain, which resolved after GTN"). Added
+  because "The fever resolved" was the only false positive of the risk floor
+  in the 2026-11 evaluation (docs/EVALUATION.md B4c).
 
 2b. SEVERE VITALS (v1.1 implementation of the section 1 vitals terms)
 -------------------------------------------------------------------------------

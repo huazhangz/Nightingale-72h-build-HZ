@@ -306,20 +306,34 @@ function findRawMentions(body: string): RawMention[] {
 }
 
 /** Every lexicon / vital mention in `body`, with its assertion context. */
+/**
+ * v1.2: a phrase immediately followed by a past-tense resolution verb ("the fever resolved four days
+ * ago", "chest pain has settled") describes a resolved problem, i.e. HISTORICAL. Deliberately narrow:
+ * only "resolved", "settled" or "subsided" directly after the phrase, optionally after has / had /
+ * have / now / fully / completely. Present tense ("settles with rest", a typical exertional
+ * pattern), negation ("has not resolved") and anything further away ("chest pain, which resolved
+ * after GTN") stay as classified by the preceding-context rules.
+ */
+const RESOLVED_AFTER = /^\s+(?:(?:has|had|have|now|fully|completely)\s+)?(?:resolved|settled|subsided)\b/i;
+
+export function resolvedAfter(body: string, endOffset: number): boolean {
+  return RESOLVED_AFTER.test(body.slice(endOffset, endOffset + 40));
+}
+
 export function findTermMentions(body: string): TermMention[] {
   if (!body) {
     return [];
   }
   const raw = findRawMentions(body);
   const spans = raw.map((mention) => [mention.startOffset, mention.endOffset] as [number, number]);
-  return raw.map((mention, index) => ({
-    ...mention,
-    context: classifyMentionContext(
+  return raw.map((mention, index) => {
+    const context = classifyMentionContext(
       body,
       mention.startOffset,
       spans.filter((_, spanIndex) => spanIndex !== index),
-    ),
-  }));
+    );
+    return { ...mention, context: context === "AFFIRMED" && resolvedAfter(body, mention.endOffset) ? "HISTORICAL" : context };
+  });
 }
 
 /**
