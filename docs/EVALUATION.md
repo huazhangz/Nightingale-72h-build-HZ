@@ -164,6 +164,14 @@ The handover core set (20 cases) is frozen and pinned by hash; a separate **chal
 
 Total live spend after round 2: **$4.56** of the $5 budget (hard cap $4.90).
 
+### 7.5 Handover set at 50 cases (2026-11-23)
+
+The handover evaluation now has **50 cases**: the frozen core 20 plus 30 challenge cases (10 citation/regression cases from §7.4 and 20 new coverage cases: medication changes across encounters, allergies with reactions, pending results and incidental findings that need follow-ups, safeguarding, a carer's concern only in a comment, shorthand, family history, a weight trend, discharge instructions, dose changes, DNACPR, interpreter needs, falls, diet, home oxygen). Offline self-test on the 30 challenge cases: oracle 100%, null 0%, rules 10%.
+
+Live, `handover-v4` with one repair round on the 20 new cases × 1 ([report](./eval/2026-11-23-handover-challenge-new20.md)): **90.0%**, no leakage, no citation failures. Both failures are the same omission: no follow-up proposed for a result that is explicitly pending (skin histology; a repeat CT for an incidental lung nodule), although no matching action existed. That is the next prompt target (the follow-up rule in v4 is phrased restrictively); it was not changed in this round because the live testing budget was spent, and an unmeasured prompt change would not be a fair default.
+
+Total live spend for all Gemini testing: **$4.73** of the $5 budget. Further evaluation runs offline (`eval:smoke`, `eval:risk:smoke`, oracle/null/rules on every case set) until a new budget is set.
+
 ### 7.2 Claude
 
 Not yet run: needs an Anthropic API key. At 20 cases × 5 reps × 2 prompts on `claude-opus-5-5` the pre-flight estimate is about $36.
@@ -285,6 +293,18 @@ The 28 core cases are now **frozen** (hash pinned in `tests/test_case_sets.test.
 | `risk-v2` | 87.5% | **0.0%** | 12.5% |
 
 Both `risk-v2` misses are over-triage: pyelonephritis with rigors and vomiting rated CRITICAL (gold HIGH; the model reasoned towards sepsis) and the negated-bleed dyspepsia rated MEDIUM once (gold LOW). That is the trade `risk-v2` makes on purpose ("when two levels are defensible, choose the higher"): no under-triage on presentations it was not tuned on, at the cost of some over-triage. 8 cases is a signal, not an estimate; the label-review protocol ([LABEL_REVIEW.zh.md](./LABEL_REVIEW.zh.md)) and a larger challenge set are the next steps.
+
+## B4e. Larger challenge set and a narrower floor (2026-11-23)
+
+**Engine v1.2.** The floor's only false positive ("The fever resolved four days ago" read as an affirmed fever) is fixed at the source: a phrase directly followed by *resolved / settled / subsided* is HISTORICAL; present tense ("settles with rest"), negation ("has not resolved") and distant mentions are unchanged (CLINICAL_HIGHLIGHT_RULES §2a). Offline on the 28 core cases the oracle (gold level through the floor) is now **100% exact** (was 96.4%): the floor no longer lifts any correct level. Rules alone: 50.0% exact (was 46.4%).
+
+**Risk cases: 61** (28 frozen core + 33 challenge). 25 challenge cases were added, six or seven per level (food anaphylaxis, severe hypoglycaemia, inferior MI, aortic dissection, paracetamol overdose, GI bleed on an anticoagulant; elderly pneumonia with confusion, post-operative DVT, pre-eclampsia, renal colic, acute kidney injury, a febrile toddler with fewer wet nappies; and medium and low presentations including denied, safety-net-only, resolved and past-history wording). Offline: oracle 100% exact, rules 27.3% (72.7% under-triage). Live on `gemini-2.5-flash`, `risk-v2`, 33 cases × 1 ([report](./eval/2026-11-23-risk-challenge-33.md)):
+
+| Variant | exact | under-triage | over-triage | QWK |
+| --- | ---: | ---: | ---: | ---: |
+| `risk-v2` | 90.9% | **0.0%** | 9.1% | 0.97 |
+
+All three misses are over-triage by one level (pyelonephritis and elderly pneumonia rated CRITICAL, negated-bleed dyspepsia MEDIUM): the deliberate "choose the higher defensible level" trade, now seen on 61 cases without a single under-triage by `risk-v2`.
 
 ## B5. Running it
 

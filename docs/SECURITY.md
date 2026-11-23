@@ -29,7 +29,7 @@ Service accounts (the risk triage agent, one per clinic) have `isServiceAccount 
 
 ## 3. Sessions
 
-- Stateless token `{sub, sv, iat, exp}` signed with HMAC-SHA256 (`NIGHTINGALE_SESSION_SECRET`, at least 32 characters, **required in production**; a random per-process secret in development, so dev sessions end on restart).
+- Stateless token `{sub, sv, iat, exp}` signed with HMAC-SHA256 (`NIGHTINGALE_SESSION_SECRET`, at least 32 characters, **required in production**: the server refuses to start without it. In development a random secret is generated once and kept in the git-ignored file `.nightingale-dev-secret`, so every route (and every restart) shares it).
 - Cookie `ng_session`: `HttpOnly; SameSite=Lax; Path=/; Max-Age=8h`, plus `Secure` in production.
 - **Revocation:** every user has a `sessionVersion`, carried in the token as `sv`. Changing the password, *Sign out of all devices* and an admin disabling the account all bump it, which invalidates every outstanding token at once. Each request re-checks the version and that the account is `ACTIVE` and not a service account.
 - Changing the password re-issues a session for the current device.
@@ -86,6 +86,6 @@ Only the hash of an activation token is stored; tokens are 32 random bytes, sing
 | Registration reveals whether an email is registered (`EMAIL_TAKEN`) | Email enumeration, limited to 10 attempts per address per hour | Email verification flow once email delivery exists |
 | No email delivery | Admins hand activation links over manually | Integrate a mail provider; links are already single-use and hashed |
 | No MFA or SSO | Password-only sign-in | OIDC/SAML for staff; TOTP or WebAuthn as a second factor |
-| No password reset | Users ask an admin for a new activation flow | Self-service reset over email |
+| No self-service password reset | An administrator issues a one-time reset link (clinical staff for patients); it expires after 72 h and signs out old sessions when used | Self-service reset over email once email delivery exists |
 | CSP allows inline scripts | Weaker XSS containment | Nonce-based CSP via middleware |
 | SQLite | No encryption at rest, single writer | PostgreSQL with encrypted storage and backups |

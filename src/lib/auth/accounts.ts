@@ -322,6 +322,27 @@ export async function reissueInvitation(actor: Actor, userId: string): Promise<s
   return token;
 }
 
+/**
+ * Password reset for an active account whose owner cannot sign in (forgotten password). Same
+ * mechanism as an invitation: a one-time link (hash stored, 72 h) that sets a new password and, on
+ * use, signs out every existing session. Admins reset staff accounts; clinical staff reset patients.
+ * Until the link is used, the user's current password and sessions keep working.
+ */
+export async function issuePasswordReset(actor: Actor, userId: string): Promise<string> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (user.role === "PATIENT") assertClinical(actor);
+  else assertAdmin(actor);
+  if (user.clinicId !== actor.clinicId || user.isServiceAccount) {
+    throw new ForbiddenError("User is outside your clinic");
+  }
+  if (user.status !== "ACTIVE") {
+    throw new HttpError(400, "NOT_ACTIVE", user.status === "INVITED" ? "Invited users need an activation link instead" : "Enable the account first");
+  }
+  const token = await issueInvitation(user.id, actor.id);
+  await audit("PASSWORD_RESET_ISSUED", actor.id, userId);
+  return token;
+}
+
 export function publicUser(user: User & { clinic?: { id: string; name: string } | null }) {
   return {
     id: user.id,

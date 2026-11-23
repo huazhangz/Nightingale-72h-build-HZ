@@ -6,6 +6,7 @@ import { ForbiddenError } from "../src/lib/auth/rbac";
 import { readCookie, SESSION_COOKIE, sessionCookie, signSession, verifySession } from "../src/lib/auth/session-token";
 import {
   handleActivate,
+  handlePasswordReset,
   handleChangePassword,
   handleCreatePatient,
   handleDemoAccounts,
@@ -222,6 +223,27 @@ describe("accounts", () => {
     expect(activated.status).toBe(200);
     expect((await signIn(email, "Doctor-Pass-123")).status).toBe(200);
     expect((await handleActivate(post("/api/auth/activate", { token, password: "Doctor-Pass-456" }))).status).toBe(400);
+  });
+
+  it("lets admins issue a one-time password reset that signs out old sessions when used", async () => {
+    const admin = await user("ADMIN");
+    const staff = await user("STAFF");
+    const other = await user("STAFF");
+    const adminCookie = cookieFrom(await signIn(admin.email));
+    const staffCookie = cookieFrom(await signIn(staff.email));
+    expect((await handlePasswordReset(post(`/api/admin/users/${other.id}/password-reset`, {}, { cookie: staffCookie }), other.id)).status).toBe(403);
+
+    const issued = await handlePasswordReset(post(`/api/admin/users/${staff.id}/password-reset`, {}, { cookie: adminCookie }), staff.id);
+    expect(issued.status).toBe(200);
+    const token = new URL(((await issued.json()) as { resetUrl: string }).resetUrl).searchParams.get("token")!;
+    // Until the link is used, the current password and session keep working.
+    expect((await requireActor(new Request(`http://${HOST}/x`, { headers: { cookie: staffCookie } }))).id).toBe(staff.id);
+
+    expect((await handleActivate(post("/api/auth/activate", { token, password: "Reset-Pass-2026" }))).status).toBe(200);
+    await expect(requireActor(new Request(`http://${HOST}/x`, { headers: { cookie: staffCookie } }))).rejects.toThrow();
+    expect((await signIn(staff.email)).status).toBe(401);
+    expect((await signIn(staff.email, "Reset-Pass-2026")).status).toBe(200);
+    expect((await handleActivate(post("/api/auth/activate", { token, password: "Reset-Pass-2027" }))).status).toBe(400);
   });
 
   it("lets clinical staff create patient records, with an optional portal invitation", async () => {

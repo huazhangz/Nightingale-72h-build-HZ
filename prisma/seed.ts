@@ -6,8 +6,12 @@ import { ENGINE_LABELS, engineConfidence, findLocalRiskPhrases } from "../src/li
 import { createProvenancePointer } from "../src/lib/care-note/provenance-utils";
 import { SEEDED_NOTES, wordCount } from "./clinical-notes";
 
-const dbPath = path.resolve(process.cwd(), "prisma", "dev.db");
-process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, "/")}`;
+// Same rule as the app (src/lib/db.ts): an absolute DATABASE_URL (e.g. file:/data/nightingale.db in
+// the container) is used as is; otherwise the local development database prisma/dev.db.
+if (!/^file:(?:\/|[A-Za-z]:)/.test(process.env.DATABASE_URL ?? "")) {
+  const dbPath = path.resolve(process.cwd(), "prisma", "dev.db");
+  process.env.DATABASE_URL = `file:${dbPath.replace(/\\/g, "/")}`;
+}
 
 const prisma = new PrismaClient();
 

@@ -63,12 +63,14 @@ export function UserAdmin({ currentUserId }: { currentUserId: string }) {
     }
   }
 
-  async function act(user: AdminUser, action: "toggle" | "link") {
+  async function act(user: AdminUser, action: "toggle" | "link" | "reset") {
     setError(null);
     setLink(null);
     setBusyId(user.id);
     try {
-      if (action === "link") {
+      if (action === "reset") {
+        setLink((await apiFetch<{ resetUrl: string }>(`/api/admin/users/${user.id}/password-reset`, { method: "POST", body: {} })).resetUrl);
+      } else if (action === "link") {
         setLink((await apiFetch<{ activationUrl: string }>(`/api/admin/users/${user.id}/invitation`, { method: "POST", body: {} })).activationUrl);
       } else {
         await apiFetch(`/api/admin/users/${user.id}`, { method: "PATCH", body: { status: user.status === "DISABLED" ? "ACTIVE" : "DISABLED" } });
@@ -156,9 +158,23 @@ export function UserAdmin({ currentUserId }: { currentUserId: string }) {
                         {t("admin.newLink")}
                       </button>
                     ) : user.id !== currentUserId ? (
-                      <button type="button" className="btn btn-secondary btn-small" disabled={busyId === user.id} onClick={() => void act(user, "toggle")}>
-                        {user.status === "DISABLED" ? t("admin.enable") : t("admin.disable")}
-                      </button>
+                      <>
+                        {user.status === "ACTIVE" ? (
+                          <button type="button" className="btn btn-secondary btn-small" disabled={busyId === user.id} onClick={() => void act(user, "reset")}>
+                            {t("admin.resetLink")}
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-small"
+                          disabled={busyId === user.id}
+                          onClick={() => {
+                            if (user.status === "DISABLED" || window.confirm(t("admin.confirmDisable", { name: user.name }))) void act(user, "toggle");
+                          }}
+                        >
+                          {user.status === "DISABLED" ? t("admin.enable") : t("admin.disable")}
+                        </button>
+                      </>
                     ) : null}
                   </td>
                 </tr>

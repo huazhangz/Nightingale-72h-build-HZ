@@ -36,7 +36,9 @@ if (process.env.NODE_ENV !== "production") {
  * database file; the pragmas return rows, hence $queryRawUnsafe.
  */
 const globalForPragmas = globalThis as unknown as { nightingalePragmas?: Promise<void> };
-globalForPragmas.nightingalePragmas ??= (async () => {
+// Not during `next build`: importing this module while collecting page data must not create or
+// open a database file (it would land in the image as an empty prisma/dev.db).
+if (process.env.NEXT_PHASE !== "phase-production-build") globalForPragmas.nightingalePragmas ??= (async () => {
   try {
     await basePrisma.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
     await basePrisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");

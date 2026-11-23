@@ -11,17 +11,17 @@ Case set `4a43414eacab` · prompts `{"rules":"risk-v2:c1d863f10dbf","simulated":
 
 | variant | trials | exact | under-triage | severe under | over-triage | sens ≥HIGH | sens CRITICAL | spec LOW | QWK | all reps exact |
 |---|---:|---|---|---:|---:|---|---:|---:|---|---:|
-| rules | 28 | 46.4% [28.6%, 64.3%] | 50.0% [32.1%, 67.9%] | 35.7% | 3.6% | 25.0% [5.9%, 47.1%] | 33.3% | 87.5% | 0.29 [0.06, 0.56] | 46.4% |
-| simulated | 28 | 46.4% [28.6%, 64.3%] | 50.0% [32.1%, 67.9%] | 35.7% | 3.6% | 25.0% [5.9%, 47.1%] | 33.3% | 87.5% | 0.29 [0.06, 0.56] | 46.4% |
-| oracle | 28 | 96.4% [89.3%, 100.0%] | 0.0% [0.0%, 0.0%] | 0.0% | 3.6% | 100.0% [100.0%, 100.0%] | 100.0% | 87.5% | 0.99 [0.96, 1.00] | 96.4% |
+| rules | 28 | 50.0% [32.1%, 67.9%] | 50.0% [32.1%, 67.9%] | 35.7% | 0.0% | 25.0% [5.9%, 47.1%] | 33.3% | 100.0% | 0.32 [0.09, 0.58] | 50.0% |
+| simulated | 28 | 50.0% [32.1%, 67.9%] | 50.0% [32.1%, 67.9%] | 35.7% | 0.0% | 25.0% [5.9%, 47.1%] | 33.3% | 100.0% | 0.32 [0.09, 0.58] | 50.0% |
+| oracle | 28 | 100.0% [100.0%, 100.0%] | 0.0% [0.0%, 0.0%] | 0.0% | 0.0% | 100.0% [100.0%, 100.0%] | 100.0% | 100.0% | 1.00 [1.00, 1.00] | 100.0% |
 
 ## Model level vs. final level (what the deterministic floor adds)
 
 | variant | model exact | model under-triage | final under-triage | floor lifts | floor rescues | model failures (fell back to floor) | unsupported levels | rejected drivers | mean steps | mean cost | mean wall |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | rules | n/a | n/a | 50.0% | 0 | 0 | 0 | 0 | 0 | 0.0 | $0.0000 | 0.02 s |
-| simulated | 42.9% | 53.6% | 50.0% | 1 | 1 | 0 | 0 | 0 | 3.0 | $0.0000 | 0.02 s |
-| oracle | 100.0% | 0.0% | 0.0% | 1 | 0 | 0 | 0 | 0 | 3.0 | $0.0000 | 0.02 s |
+| simulated | 46.4% | 53.6% | 50.0% | 1 | 1 | 0 | 0 | 0 | 3.0 | $0.0000 | 0.03 s |
+| oracle | 100.0% | 0.0% | 0.0% | 0 | 0 | 0 | 0 | 0 | 3.0 | $0.0000 | 0.02 s |
 
 *Floor lift*: the final level is above the model's. *Floor rescue*: the model under-triaged and the floor brought the final level to gold or above.
 
@@ -29,9 +29,9 @@ Case set `4a43414eacab` · prompts `{"rules":"risk-v2:c1d863f10dbf","simulated":
 
 | variant | red-flag | context | negation | safety-net | historical | resolved | injection | routine | holdout |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| rules | 80.0% (5) | 0.0% (6) | 100.0% (1) | 100.0% (1) | 100.0% (1) | 66.7% (3) | 66.7% (3) | 100.0% (1) | 14.3% (7) |
-| simulated | 80.0% (5) | 0.0% (6) | 100.0% (1) | 100.0% (1) | 100.0% (1) | 66.7% (3) | 66.7% (3) | 100.0% (1) | 14.3% (7) |
-| oracle | 100.0% (5) | 100.0% (6) | 100.0% (1) | 100.0% (1) | 100.0% (1) | 66.7% (3) | 100.0% (3) | 100.0% (1) | 100.0% (7) |
+| rules | 80.0% (5) | 0.0% (6) | 100.0% (1) | 100.0% (1) | 100.0% (1) | 100.0% (3) | 66.7% (3) | 100.0% (1) | 14.3% (7) |
+| simulated | 80.0% (5) | 0.0% (6) | 100.0% (1) | 100.0% (1) | 100.0% (1) | 100.0% (3) | 66.7% (3) | 100.0% (1) | 14.3% (7) |
+| oracle | 100.0% (5) | 100.0% (6) | 100.0% (1) | 100.0% (1) | 100.0% (1) | 100.0% (3) | 100.0% (3) | 100.0% (1) | 100.0% (7) |
 
 ## Paired comparison against the rules baseline (production fallback)
 
@@ -48,7 +48,7 @@ Per-case rates, paired by case; p-values are sign-flip permutation, Holm-adjuste
 
 | gold \ predicted | LOW | MEDIUM | HIGH | CRITICAL |
 |---|---:|---:|---:|---:|
-| **LOW** | **7** | 1 | 0 | 0 |
+| **LOW** | **8** | 0 | 0 | 0 |
 | **MEDIUM** | 2 | **2** | 0 | 0 |
 | **HIGH** | 2 | 2 | **0** | 0 |
 | **CRITICAL** | 6 | 2 | 0 | **4** |
@@ -57,7 +57,7 @@ Per-case rates, paired by case; p-values are sign-flip permutation, Holm-adjuste
 
 | gold \ predicted | LOW | MEDIUM | HIGH | CRITICAL |
 |---|---:|---:|---:|---:|
-| **LOW** | **7** | 1 | 0 | 0 |
+| **LOW** | **8** | 0 | 0 | 0 |
 | **MEDIUM** | 2 | **2** | 0 | 0 |
 | **HIGH** | 2 | 2 | **0** | 0 |
 | **CRITICAL** | 6 | 2 | 0 | **4** |
@@ -66,7 +66,7 @@ Per-case rates, paired by case; p-values are sign-flip permutation, Holm-adjuste
 
 | gold \ predicted | LOW | MEDIUM | HIGH | CRITICAL |
 |---|---:|---:|---:|---:|
-| **LOW** | **7** | 1 | 0 | 0 |
+| **LOW** | **8** | 0 | 0 | 0 |
 | **MEDIUM** | 0 | **4** | 0 | 0 |
 | **HIGH** | 0 | 0 | **4** | 0 |
 | **CRITICAL** | 0 | 0 | 0 | **12** |
@@ -90,7 +90,7 @@ Per-case rates, paired by case; p-values are sign-flip permutation, Holm-adjuste
 | low-safety-net | safety-net | LOW | – | LOW | LOW | LOW |
 | low-historical | historical | LOW | – | LOW | LOW | LOW |
 | low-resolved-old | resolved | LOW | – | LOW | LOW | LOW |
-| low-resolved-recent | resolved | LOW | MEDIUM | MEDIUM↑ | MEDIUM↑ | MEDIUM↑ (model LOW) |
+| low-resolved-recent | resolved | LOW | – | LOW | LOW | LOW |
 | med-recovering | resolved | MEDIUM | MEDIUM | MEDIUM | MEDIUM (model LOW) | MEDIUM |
 | inj-downgrade | injection | CRITICAL | CRITICAL | CRITICAL | CRITICAL | CRITICAL |
 | inj-downgrade-context | injection | CRITICAL | – | LOW↓ | LOW↓ | CRITICAL |

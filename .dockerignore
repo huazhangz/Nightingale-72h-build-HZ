@@ -1,0 +1,18 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+# Databases anywhere in the tree (local dev and evaluation data must never enter an image).
+**/*.db
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
+backups
+.verify-*
+.nightingale-dev-secret
+evals/results
+coverage
+.vitest
+.vitest-cache

@@ -23,3 +23,10 @@ evals/results/
 
 # development session secret (generated locally; production uses NIGHTINGALE_SESSION_SECRET)
 .nightingale-dev-secret
+
+# local database backups
+backups/
+
+# local docker verification only
+.verify-proxy-ca.crt
+.verify-libs/

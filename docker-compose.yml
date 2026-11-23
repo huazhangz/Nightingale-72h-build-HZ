@@ -1,0 +1,26 @@
+# Single-host deployment. Put the secrets in a .env file next to this one (never commit it):
+#   NIGHTINGALE_SESSION_SECRET=<openssl rand -hex 32>
+#   NIGHTINGALE_PUBLIC_URL=https://nightingale.example.org
+#   ANTHROPIC_API_KEY=...   (or NIGHTINGALE_AGENT_CLIENT=gemini + GEMINI_API_KEY=...)
+# Then: docker compose up -d --build, and create the first administrator with
+#   docker compose exec app npm run admin:create -- --email you@example.org --password '...'
+services:
+  app:
+    build: .
+    image: nightingale:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # The database always lives on the volume, whatever a local .env says.
+      DATABASE_URL: file:/data/nightingale.db
+      NIGHTINGALE_SESSION_SECRET: ${NIGHTINGALE_SESSION_SECRET:?set NIGHTINGALE_SESSION_SECRET in .env}
+      NIGHTINGALE_SEED_DEMO: ${NIGHTINGALE_SEED_DEMO:-false}
+    volumes:
+      - nightingale-data:/data
+
+volumes:
+  nightingale-data:

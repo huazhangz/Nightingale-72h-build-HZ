@@ -260,4 +260,358 @@ export const CHALLENGE_CASES: EvalCase[] = [
       followups: { expected: "any" },
     },
   },
+  // Added 2026-11-23 (coverage breadth toward the 50-case target): medication changes across
+  // encounters, allergies with reactions, pending results and incidental findings (follow-ups),
+  // safeguarding, comment-only carer concerns, shorthand, family history, trends, discharge
+  // instructions, dose changes, end-of-life wishes, communication, falls, diet, home oxygen.
+  {
+    id: "ch-latest-encounter",
+    tags: ["challenge", "coverage"],
+    description: "Two encounters: the newer one changes the antibiotic.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("old", "Ear infection", day(15), "Otitis media in the right ear. Started amoxicillin for five days."),
+      note("new", "Rash review", day(19), "Itchy rash on day three of amoxicillin. Switched to clarithromycin and amoxicillin allergy recorded."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "clarithromycin", noteKey: "new", anyOf: ["clarithromycin"], provenance: "author" },
+        { id: "rash", noteKey: "new", anyOf: ["rash"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-allergy-reaction",
+    tags: ["challenge", "coverage"],
+    description: "An allergy must be handed over with its reaction.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Medication review", day(20), "Allergic to penicillin: anaphylaxis in 2012 requiring adrenaline. Currently well. Repeat prescriptions issued."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "penicillin", noteKey: "main", anyOf: ["penicillin"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-pending-biopsy",
+    tags: ["challenge", "coverage"],
+    description: "A result is outstanding and should become a follow-up.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Skin lesion", day(20), "Irregular pigmented lesion on the left shoulder. Punch biopsy taken today and histology is pending."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "biopsy", noteKey: "main", anyOf: ["biopsy", "histology"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "some", anyOf: ["histology", "biopsy"] },
+    },
+  },
+  {
+    id: "ch-safeguarding",
+    tags: ["challenge", "coverage"],
+    description: "A safeguarding concern must not be lost.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Child injury", day(20), "Child attended with bruises on both upper arms that do not fit the history given. Safeguarding referral made to the local team."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "safeguarding", noteKey: "main", anyOf: ["safeguarding"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-medication-stopped",
+    tags: ["challenge", "coverage"],
+    description: "A stopped medicine and its replacement.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Indigestion", day(20), "Stopped naproxen because of indigestion after meals. Started paracetamol regularly and omeprazole for four weeks."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "naproxen", noteKey: "main", anyOf: ["naproxen"], provenance: "author" },
+        { id: "omeprazole", noteKey: "main", anyOf: ["omeprazole"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-carer-comment",
+    tags: ["challenge", "coverage"],
+    description: "A carer's concern recorded only in a comment.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Anticoagulation review", day(20), "INR 2.6 today, within range. Continue warfarin 4 mg daily.", { comments: [{ authorRole: "STAFF" as const, body: "Carer called afterwards: he has been forgetting doses of his warfarin this week." }] }),
+    ],
+    expect: {
+      mustCover: [
+        { id: "forgetting", noteKey: "main", anyOf: ["forgetting", "missed", "adherence"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-normal-vitals-negated",
+    tags: ["challenge", "coverage"],
+    description: "Normal observations with denied red flags.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Check-up", day(20), "Denies chest pain or shortness of breath. BP 124/78, heart rate 72, SpO2 98% on air. Continue current treatment."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "bp", noteKey: "main", anyOf: ["124/78"], provenance: "author" },
+      ],
+      mustNotAssert: [
+        { id: "chest-pain", anyOf: ["chest pain"], reason: "negated" },
+        { id: "sob", anyOf: ["shortness of breath"], reason: "negated" },
+      ],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-conditional-plan",
+    tags: ["challenge", "coverage"],
+    description: "A plan that depends on a pending result.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Chest pain review", day(20), "Troponin sent at 10:00 and the result is pending. If the troponin is raised, admit under cardiology."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "troponin", noteKey: "main", anyOf: ["troponin"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-two-problems",
+    tags: ["challenge", "coverage"],
+    description: "Two unrelated problems in one note.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Review", day(20), "Gout flare in the left knee, colchicine started. Separately, a new mole on the back was referred for dermatology review."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "gout", noteKey: "main", anyOf: ["gout"], provenance: "author" },
+        { id: "mole", noteKey: "main", anyOf: ["mole", "dermatology"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-abbreviations",
+    tags: ["challenge", "coverage"],
+    description: "Abbreviated clinical shorthand.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Breathlessness", day(20), "SOB on exertion x 3/7, CXR clear today. Rx salbutamol inhaler and review if no better."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "cxr", noteKey: "main", anyOf: ["cxr"], provenance: "author" },
+        { id: "salbutamol", noteKey: "main", anyOf: ["salbutamol"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-family-history",
+    tags: ["challenge", "coverage"],
+    description: "Family history drives a referral.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Bowel symptoms", day(20), "Family history of bowel cancer in her father at age 52. Colonoscopy referral discussed and agreed."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "colonoscopy", noteKey: "main", anyOf: ["colonoscopy"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-weight-trend",
+    tags: ["challenge", "coverage"],
+    description: "An unintentional weight loss trend.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Weight review", day(20), "Weight 64 kg today, down from 71 kg three months ago without trying. Bloods and a chest X-ray requested."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "weight", noteKey: "main", anyOf: ["64 kg", "71 kg"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-discharge-instructions",
+    tags: ["challenge", "coverage"],
+    description: "Discharge instructions with a dated review.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Discharge summary", day(19), "Discharged after three days of intravenous antibiotics for leg cellulitis. Complete five more days of flucloxacillin. GP nurse to review the wound on Monday."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "flucloxacillin", noteKey: "main", anyOf: ["flucloxacillin"], provenance: "author" },
+        { id: "wound", noteKey: "main", anyOf: ["wound"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-dose-change",
+    tags: ["challenge", "coverage"],
+    description: "Two notes give different doses; the newer one is current.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("old", "Heart failure clinic", day(10), "Bisoprolol 2.5 mg daily, tolerating well."),
+      note("new", "Heart failure review", day(19), "Bisoprolol increased to 5 mg daily; heart rate 78."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "dose", noteKey: "new", anyOf: ["5 mg"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-incidental-finding",
+    tags: ["challenge", "coverage"],
+    description: "An incidental finding needs surveillance.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "CT result", day(20), "CT chest shows an incidental 8 mm lung nodule. Repeat CT in six months has been requested."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "nodule", noteKey: "main", anyOf: ["nodule"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "some", anyOf: ["ct", "nodule"] },
+    },
+  },
+  {
+    id: "ch-dnacpr",
+    tags: ["challenge", "coverage"],
+    description: "End-of-life wishes must be handed over.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Palliative care visit", day(20), "Patient wishes to be cared for at home. DNACPR form completed and the original is kept in the house."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "dnacpr", noteKey: "main", anyOf: ["dnacpr"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-interpreter",
+    tags: ["challenge", "coverage"],
+    description: "Communication needs.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "New patient", day(20), "Needs a Polish interpreter for every consultation; her daughter should not interpret. Booked for next visit."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "interpreter", noteKey: "main", anyOf: ["interpreter"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-falls",
+    tags: ["challenge", "coverage"],
+    description: "Falls risk.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Home visit", day(20), "Two falls at home in the last month, no injuries. Walking frame provided and occupational therapy referral made."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "falls", noteKey: "main", anyOf: ["falls"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-diet",
+    tags: ["challenge", "coverage"],
+    description: "A strict dietary requirement.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Coeliac review", day(20), "Coeliac disease, strict gluten-free diet, symptoms well controlled. Dietitian review booked for March."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "gluten", noteKey: "main", anyOf: ["gluten"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
+  {
+    id: "ch-oxygen-home",
+    tags: ["challenge", "coverage"],
+    description: "Home oxygen and its safety rule.",
+    readerRole: "CLINICIAN",
+    notes: [
+      note("main", "Respiratory review", day(20), "Home oxygen at 2 litres per minute for 16 hours a day. Smoking near the oxygen was discussed again; family confirms no one smokes indoors."),
+    ],
+    expect: {
+      mustCover: [
+        { id: "oxygen", noteKey: "main", anyOf: ["oxygen", "2 litres"], provenance: "author" },
+      ],
+      mustNotAssert: [],
+      forbiddenText: [],
+      followups: { expected: "any" },
+    },
+  },
 ];

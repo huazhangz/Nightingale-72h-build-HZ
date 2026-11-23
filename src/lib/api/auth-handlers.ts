@@ -11,6 +11,7 @@ import {
   publicUser,
   registerPatient,
   reissueInvitation,
+  issuePasswordReset,
   setUserStatus,
   signOutEverywhere,
 } from "../auth/accounts";
@@ -201,6 +202,16 @@ export async function handleReissueInvitation(request: Request, userId: string):
     const actor = await requireActor(request);
     const token = await reissueInvitation(actor, userId);
     return Response.json({ activationUrl: `${appOrigin(request)}/activate?token=${token}` });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function handlePasswordReset(request: Request, userId: string): Promise<Response> {
+  try {
+    const actor = await requireActor(request);
+    const token = await issuePasswordReset(actor, userId);
+    return Response.json({ resetUrl: `${appOrigin(request)}/activate?token=${token}` });
   } catch (error) {
     return errorResponse(error);
   }

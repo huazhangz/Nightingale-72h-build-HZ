@@ -76,7 +76,7 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
-**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21/22): after one round of prompt optimisation, the risk agent (`risk-v2`) rates 96.4% of 84 trials at the exact level with **no under-triage**, including 7 holdout cases written after the tuning (rule floor alone: 46.4% exact, 50% under-triage). The handover agent (`handover-v4` with one citation-repair round) passes 97.5% of core runs and 95% of the challenge set, with 100% required-fact coverage and zero leakage; free-text quote errors are repaired or rejected, never shown ([EVALUATION.md](./docs/EVALUATION.md) §7.4).
+**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21 to 23, $4.73 in total): the risk agent (`risk-v2`) rates 96.4% of 84 core trials and 90.9% of 33 challenge cases at the exact level, with **no under-triage on any of the 61 cases** (rule floor alone: about half under-triaged). The handover agent (`handover-v4` with one citation-repair round) passes 97.5% of core runs and 90–95% of the 30 challenge cases, with zero leakage. Evaluation sets: 50 handover and 61 risk cases (frozen core + challenge). Claude runs are pending an Anthropic key.
 
 ---
 
@@ -111,7 +111,7 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    npx vitest run
    ```
 
-   **209 / 209** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **217 / 217** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
@@ -156,13 +156,17 @@ npm run admin:create -- --email you@example.org --password 'Your-Long-Passphrase
 
 Re-running it for the same email resets the password, re-activates the account and signs out its old sessions.
 
+Users who forget their password get a one-time **password reset link** from an administrator (`/admin/users`; clinical staff can do this for patients). The link works once, expires after 72 hours and signs out the user's old sessions when used.
+
+**Production:** `docker compose up -d --build` with `NIGHTINGALE_SESSION_SECRET` in `.env`; the server refuses to start with an unsafe production configuration, exposes `/api/health`, and `npm run db:backup` takes online backups. See [docs/DEPLOYMENT.zh.md](./docs/DEPLOYMENT.zh.md).
+
 ---
 
 ## Test Suite & Compatibility Guide
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 209 / 209 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 217 / 217 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 
@@ -311,7 +315,7 @@ See **[Test Suite & Compatibility Guide](#test-suite--compatibility-guide)** for
 
 | Command | Result |
 | --- | --- |
-| `npm run test` or `npx vitest run` | **209 / 209** passing |
+| `npm run test` or `npx vitest run` | **217 / 217** passing |
 | `npm run typecheck` | 0 errors |
 | `npm run build` | passes |
 | `npm run eval:smoke` | oracle 100%, null baseline passes only the empty case |
@@ -341,6 +345,7 @@ Coverage includes:
 - [docs/EVALUATION.md](./docs/EVALUATION.md) — evaluation method, statistics, baseline results for both agents
 - [docs/SECURITY.md](./docs/SECURITY.md) — accounts, sessions, authorization, browser protections, PHI, known gaps
 - [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md) — live-API test plan with cost gates (Chinese)
+- [docs/DEPLOYMENT.zh.md](./docs/DEPLOYMENT.zh.md) — Docker / Compose deployment, startup checks, health endpoint, backups, go-live checklist (Chinese)
 - [docs/LABEL_REVIEW.zh.md](./docs/LABEL_REVIEW.zh.md) — frozen core vs challenge sets, blind clinician label review and agreement (Chinese)
 - [docs/UPGRADE_PLAN.zh.md](./docs/UPGRADE_PLAN.zh.md) — upgrade plan (Chinese)
 - [docs/TECHNICAL_BRIEF.md](./docs/TECHNICAL_BRIEF.md) — architecture, highlight engine, CareAction, RBAC, trade-offs
