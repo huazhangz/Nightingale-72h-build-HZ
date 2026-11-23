@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -9,7 +9,8 @@ import path from "node:path";
  * Format: base64url(JSON payload) "." base64url(HMAC(secret, payload part)).
  */
 
-export const SESSION_COOKIE = "ng_session";
+/** Prefix of the session cookie name. The full name adds a fingerprint of the signing secret. */
+export const SESSION_COOKIE_PREFIX = "ng_session";
 export const SESSION_TTL_SECONDS = 8 * 60 * 60;
 
 export type SessionPayload = {
@@ -46,11 +47,19 @@ function developmentSecret(): string {
     secret = null;
   }
   if (!secret) {
-    secret = randomBytes(32).toString("hex");
+    const generated = randomBytes(32).toString("hex");
     try {
-      writeFileSync(file, `${secret}\n`, { mode: 0o600 });
+      // Exclusive create: if another process created the file first, its value wins and is read back.
+      writeFileSync(file, `${generated}\n`, { mode: 0o600, flag: "wx" });
+      secret = generated;
     } catch {
-      // Read-only working directory: the process-wide value still keeps routes consistent.
+      try {
+        const stored = readFileSync(file, "utf8").trim();
+        secret = stored.length >= 32 ? stored : generated;
+      } catch {
+        // Read-only working directory: the process-wide value still keeps routes consistent.
+        secret = generated;
+      }
     }
   }
   holder.nightingaleDevSecret = secret;
@@ -67,6 +76,35 @@ function sessionSecret(): string {
   }
   return developmentSecret();
 }
+
+/**
+ * Session cookie name: `ng_session_<8 hex of SHA-256(secret)>`. Browsers do not separate cookies by
+ * port, so two Nightingale servers on one host (a dev server and a Docker container, or two clones
+ * with different secrets) used to overwrite each other's `ng_session` cookie: signing in on one
+ * signed you out of the other, which looked like a random bounce to the login page. With a
+ * per-secret name each server only reads its own cookie. The fingerprint does not reveal the secret.
+ */
+export function sessionCookieName(): string {
+  const fingerprint = createHash("sha256").update(`nightingale-cookie:${sessionSecret()}`).digest("hex").slice(0, 8);
+  return `${SESSION_COOKIE_PREFIX}_${fingerprint}`;
+}
+
+/** Session-looking cookie names in a Cookie header (this server's or another's on the same host). */
+export function sessionCookieNames(header: string | null): string[] {
+  if (!header) {
+    return [];
+  }
+  return header
+    .split(";")
+    .map((part) => part.trim().split("=")[0] ?? "")
+    .filter((name) => name === SESSION_COOKIE_PREFIX || name.startsWith(`${SESSION_COOKIE_PREFIX}_`));
+}
+
+/**
+ * The pre-fingerprint cookie name. Sign-in and sign-out expire it; cookies of other servers on the
+ * same host are left alone, so signing in here never signs you out there.
+ */
+export const LEGACY_SESSION_COOKIE = SESSION_COOKIE_PREFIX;
 
 function base64url(input: Buffer | string): string {
   return Buffer.from(input).toString("base64url");
@@ -137,13 +175,18 @@ export function readCookie(header: string | null, name: string): string | null {
   return null;
 }
 
-export function sessionCookie(token: string, maxAgeSeconds = SESSION_TTL_SECONDS): string {
+export function sessionCookie(token: string, maxAgeSeconds = SESSION_TTL_SECONDS, name = sessionCookieName()): string {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+  return `${name}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
 }
 
-export function clearedSessionCookie(): string {
-  return sessionCookie("", 0);
+export function clearedSessionCookie(name = sessionCookieName()): string {
+  return sessionCookie("", 0, name);
+}
+
+/** The session token this server issued, read from a Cookie header. */
+export function readSessionCookie(header: string | null): string | null {
+  return readCookie(header, sessionCookieName());
 }
 
 /**

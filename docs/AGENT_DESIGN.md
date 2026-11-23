@@ -178,7 +178,7 @@ With `handover-v5` the record tools run in **evidence mode**: `get_notes` return
 - **What is still checked:** that the id was issued in this run (ids are assigned in read order to notes the run read, so they cannot point at unread notes), plus the unchanged checks on the resolved text. An unknown id is `UNKNOWN_EVIDENCE` and goes through the same repair round.
 - **What it does not prove:** that the cited sentence supports the statement. That is what coverage and assertion grading, negation-conflict checks and clinicians' review are for.
 - Earlier prompt versions keep quote mode; the mode follows the prompt version (`citationModeFor`).
-- **Status:** not the default. With Gemini 2.5 Flash it removed quote errors entirely but caused malformed function calls on long records (EVALUATION §7.4); `handover-v4` with the repair round is the default until evidence mode is measured on a model with strict tool schemas.
+- **Status:** not the default. With Gemini 2.5 Flash it removed quote errors entirely but caused malformed function calls on long records (EVALUATION §7.4); quote mode with the repair round stays the default until evidence mode is measured on a model with strict tool schemas.
 
 ### 3.3 Guardrails
 
@@ -194,7 +194,27 @@ With `handover-v5` the record tools run in **evidence mode**: `get_notes` return
 
 ### 3.4 Prompts
 
-`handover-v1` (short baseline) and `handover-v2` (workflow, exact-quote rules, how to read negation / safety-net advice / history, severity rubric, follow-up policy, data boundary). Each run stores the prompt version and content hash; which prompt is better is measured pairwise (EVALUATION.md §5).
+Each run stores the prompt version and content hash; which prompt is better is measured pairwise (EVALUATION.md §5, §7).
+
+| Version | Change | Evidence |
+| --- | --- | --- |
+| `handover-v1` | Short baseline | §7.1 |
+| `handover-v2` | Workflow, exact-quote rules, how to read negation / safety-net advice / history, severity rubric, follow-up policy, data boundary | §7.1 |
+| `handover-v3` | Stricter quote rules; `<must_include>` (suicide-risk screens, safeguarding, allergies with reaction, pending results, medication changes) | §7.3 |
+| `handover-v4` | Safety-net advice is always a `plan` item of severity `info` | §7.3, §7.4 |
+| `handover-v5` | Evidence ids instead of quotes (§3.2) | §7.4 |
+| **`handover-v6`** (default) | v4 plus an explicit follow-up procedure, and the one-time follow-up check below | §7.6 (offline) |
+
+### 3.5 Follow-up check (handover-v6)
+
+`create_followup` is optional by nature, and in live runs the model sometimes summarised a pending result correctly but did not propose a follow-up. For `handover-v6`, the submit tool's check (the same mechanism as the citation repair round) also runs `followupProblems`:
+
+1. Before the run, the open actions are loaded from the glance card (memoised, so the model's own `get_glance_cards` reuses the read).
+2. At submission, `outstanding.ts` finds sentences in the notes read that document an outstanding action: a pending or awaited result, a test requested/ordered/booked, an awaited reply. It skips denials and closed loops ("no results pending", "histology is back", "cancelled").
+3. A sentence counts as covered when an open action, a proposal or any `create_followup` attempt (including one refused as a duplicate) shares a specific word with it ("histology", "CT").
+4. Uncovered sentences (at most 3) go back once, by note id and sentence, with two allowed answers: propose it, or submit again unchanged if it is not outstanding. The check never asks a second time and never creates anything itself.
+
+The detector decides only whether to ask. Its precision was measured on 479 recorded live runs (EVALUATION §7.6): 0 questions in 107 runs where a follow-up is a misuse.
 
 ---
 

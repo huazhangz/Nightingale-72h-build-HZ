@@ -6,9 +6,9 @@ import { createHash } from "node:crypto";
  * the first user message.
  */
 
-export const PROMPT_VERSIONS = ["handover-v1", "handover-v2", "handover-v3", "handover-v4", "handover-v5"] as const;
+export const PROMPT_VERSIONS = ["handover-v1", "handover-v2", "handover-v3", "handover-v4", "handover-v5", "handover-v6"] as const;
 export type PromptVersion = (typeof PROMPT_VERSIONS)[number];
-export const DEFAULT_PROMPT_VERSION: PromptVersion = "handover-v4";
+export const DEFAULT_PROMPT_VERSION: PromptVersion = "handover-v6";
 
 const V1 = `You are a clinical handover assistant for an outpatient care team.
 
@@ -108,17 +108,48 @@ const V5 = V4.replace(
 </evidence_rules>`,
 ).replace("2. Read every note that has a body available with get_notes.", "2. Read every note that has evidence available with get_notes.");
 
+/**
+ * handover-v6: v4 with an explicit follow-up procedure. In the 2026-11-22 challenge run both v4
+ * failures (ch-pending-biopsy, ch-incidental-finding) summarised a pending result correctly but
+ * never called create_followup: v4 calls it "optional" in the workflow and defines outstanding
+ * actions only in the abstract. v6 makes the step mandatory to consider, names the sentence patterns
+ * with examples, and keeps the existing "nothing qualifies, propose nothing" rule. The runtime adds a
+ * one-time submit check for documented pending actions with no follow-up (tools.ts followupProblems).
+ */
+const V6 = V4.replace(
+  "3. Optionally call create_followup for actions the notes document as outstanding.",
+  "3. Before submitting, list to yourself every outstanding action in the notes you read (see <followups>) and call create_followup once for each one that is not already in unresolved_actions.",
+).replace(
+  `<followups>
+Propose a follow-up only for an action the notes document as outstanding (ordered but not resulted, scheduled, or explicitly pending) that is not already in unresolved_actions. If nothing qualifies, propose nothing.
+</followups>`,
+  `<followups>
+An action is outstanding when the notes say it has not happened or not come back yet:
+- a result or report that is pending or awaited ("histology is pending", "HbA1c ordered today; result pending");
+- a test, scan or referral that has been requested, ordered, booked or scheduled ("Repeat CT in six months has been requested");
+- a reply or appointment the team is waiting for.
+For each one that is not already in unresolved_actions, call create_followup with a task phrased as an action ("Chase histology for left shoulder biopsy", "Ensure repeat CT chest in six months is booked"), the note that documents it, and a short rationale. Mentioning it in the summary is not enough: the summary is read once, a follow-up is tracked until done.
+Do not propose: actions already in unresolved_actions; routine reviews already part of the plan ("review in a month"); safety-net advice; anything a later note shows as done, cancelled or superseded. If nothing qualifies, propose nothing.
+</followups>`,
+);
+
 const PROMPTS: Record<PromptVersion, string> = {
   "handover-v1": V1,
   "handover-v2": V2,
   "handover-v3": V3,
   "handover-v4": V4,
   "handover-v5": V5,
+  "handover-v6": V6,
 };
 
 /** How citations work for a prompt version: v5 cites server-issued evidence ids, earlier ones quote. */
 export function citationModeFor(version: PromptVersion): "quote" | "evidence" {
   return version === "handover-v5" ? "evidence" : "quote";
+}
+
+/** Prompt versions whose runs get the one-time submit check for unproposed outstanding actions. */
+export function followupCheckFor(version: PromptVersion): boolean {
+  return version === "handover-v6";
 }
 
 export function systemPrompt(version: PromptVersion): string {

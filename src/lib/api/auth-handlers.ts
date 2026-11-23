@@ -16,7 +16,7 @@ import {
   signOutEverywhere,
 } from "../auth/accounts";
 import { assertSameOrigin, currentUser, errorResponse, HttpError, requireActor } from "../auth/session";
-import { clearedSessionCookie, sessionCookie, signSession } from "../auth/session-token";
+import { clearedSessionCookie, LEGACY_SESSION_COOKIE, sessionCookie, sessionCookieName, sessionCookieNames, signSession } from "../auth/session-token";
 import { DEMO_PASSWORD } from "../auth/demo";
 import { SlidingWindowLimiter } from "../agent/rate-limit";
 
@@ -53,8 +53,28 @@ function rateLimited(limiter: SlidingWindowLimiter, request: Request): Response 
   );
 }
 
-function withSession(payload: Json, user: { id: string; sessionVersion: number }, status = 200): Response {
-  return Response.json(payload, { status, headers: { "set-cookie": sessionCookie(signSession(user.id, user.sessionVersion)) } });
+/** Expire the legacy, un-fingerprinted session cookie if the browser still sends it. */
+function staleCookieClears(request: Request | undefined, keep: string | null): string[] {
+  const names = sessionCookieNames(request?.headers.get("cookie") ?? null);
+  return names.includes(LEGACY_SESSION_COOKIE) && keep !== LEGACY_SESSION_COOKIE ? [clearedSessionCookie(LEGACY_SESSION_COOKIE)] : [];
+}
+
+function withCookies(payload: Json, cookies: string[], status = 200): Response {
+  const headers = new Headers();
+  for (const cookie of cookies) {
+    headers.append("set-cookie", cookie);
+  }
+  return Response.json(payload, { status, headers });
+}
+
+function withSession(payload: Json, user: { id: string; sessionVersion: number }, status = 200, request?: Request): Response {
+  const current = sessionCookieName();
+  return withCookies(payload, [sessionCookie(signSession(user.id, user.sessionVersion)), ...staleCookieClears(request, current)], status);
+}
+
+function signedOut(request?: Request): Response {
+  const current = sessionCookieName();
+  return withCookies({ ok: true }, [clearedSessionCookie(current), ...staleCookieClears(request, current)]);
 }
 
 function authErrorResponse(error: unknown): Response {
@@ -77,14 +97,14 @@ export async function handleLogin(request: Request): Promise<Response> {
     assertSameOrigin(request);
     const payload = await body(request);
     const user = await authenticate({ email: str(payload.email), password: str(payload.password), clientKey: clientKey(request) });
-    return withSession({ user: { id: user.id, role: user.role, name: user.name } }, user);
+    return withSession({ user: { id: user.id, role: user.role, name: user.name } }, user, 200, request);
   } catch (error) {
     return authErrorResponse(error);
   }
 }
 
-export function handleLogout(): Response {
-  return Response.json({ ok: true }, { headers: { "set-cookie": clearedSessionCookie() } });
+export function handleLogout(request?: Request): Response {
+  return signedOut(request);
 }
 
 export async function handleMe(request: Request): Promise<Response> {
@@ -126,7 +146,7 @@ export async function handleActivate(request: Request): Promise<Response> {
     if (limited) return limited;
     const payload = await body(request);
     const user = await activateAccount({ token: str(payload.token), password: str(payload.password) });
-    return withSession({ user: { id: user.id, role: user.role, name: user.name } }, user);
+    return withSession({ user: { id: user.id, role: user.role, name: user.name } }, user, 200, request);
   } catch (error) {
     return authErrorResponse(error);
   }
@@ -147,7 +167,7 @@ export async function handleSignOutEverywhere(request: Request): Promise<Respons
   try {
     const actor = await requireActor(request);
     await signOutEverywhere(actor);
-    return Response.json({ ok: true }, { headers: { "set-cookie": clearedSessionCookie() } });
+    return signedOut(request);
   } catch (error) {
     return errorResponse(error);
   }

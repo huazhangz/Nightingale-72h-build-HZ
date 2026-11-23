@@ -169,11 +169,17 @@ npm run eval -- --variants claude-v1,claude-v2 --reps 3 --k 1,3 --out evals/resu
 npm run build
 ```
 
+生产模式下开启演示模式会被启动检查拒绝；会话密钥也要固定写在 `.env` 里，每次启动生成新密钥会让所有人在重启后被登出。先生成一次：
+
 ```bash
-NIGHTINGALE_DEMO_MODE=true NIGHTINGALE_SESSION_SECRET=$(openssl rand -hex 32) npm start
+grep -q NIGHTINGALE_SESSION_SECRET .env 2>/dev/null || echo "NIGHTINGALE_SESSION_SECRET=$(openssl rand -hex 32)" >> .env
 ```
 
-用演示医生账号登录，依次检查：
+```bash
+npm start
+```
+
+用演示医生账号登录（`clinician@nightingale.test`，密码见 README，由 `npm run db:seed` 写入），依次检查：
 1. 工作列表里，seed 评估标为 Rules。
 2. 打开一位患者，点 Reassess：面板显示“A new assessment is running…”，几秒后变为 AI assessment，driver 带引用且能跳到原文。
 3. 新建一条带红旗症状的笔记：返回工作列表后该患者自动重新评估。

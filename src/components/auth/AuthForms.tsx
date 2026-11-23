@@ -60,6 +60,7 @@ export function LoginForm() {
   return (
     <section className="auth-card" aria-labelledby="login-title">
       <h1 id="login-title">{t("auth.signInTitle")}</h1>
+      {params?.get("reason") === "expired" && !error ? <Notice tone="info">{t("auth.sessionEnded")}</Notice> : null}
       <form onSubmit={onSubmit} className="form-stack" noValidate>
         <div className="field">
           <label htmlFor="login-email">{t("auth.email")}</label>

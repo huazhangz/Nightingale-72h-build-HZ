@@ -8,11 +8,21 @@ import { normalizeForMatch } from "../shared/text";
 import { checkCitation, resolveEvidence, UNKNOWN_EVIDENCE_PREFIX, type CitationRejection } from "../shared/citations";
 import type { EvidenceLedger } from "../shared/record-context";
 import { FOLLOWUP_KINDS, HandoverEvidenceSubmission, HandoverSubmission, type FollowupProposalDraft } from "./schema";
+import { coversSentence, outstandingMentions } from "./outstanding";
 
 export { MAX_NOTES_PER_CALL } from "../shared/record-tools";
 
 /** Handover runs add follow-up proposals to the shared record context. */
-export type HandoverContext = RecordContext & { proposals: FollowupProposalDraft[] };
+export type HandoverContext = RecordContext & {
+  proposals: FollowupProposalDraft[];
+  /**
+   * handover-v6: ask once at submit time about documented outstanding actions that have no
+   * follow-up. Holds the open (unresolved) action texts, loaded before the run.
+   */
+  followupCheck?: { openActions: string[]; asked: boolean };
+  /** Every create_followup call's text, including ones refused as duplicates of an open action. */
+  followupAttempts?: string[];
+};
 
 export const TOOL_NAMES = {
   ...RECORD_TOOL_NAMES,
@@ -72,6 +82,7 @@ const createFollowup = defineTool<
       throw new ToolInputError("TOO_MANY_PROPOSALS", `At most ${MAX_PROPOSALS_PER_RUN} follow-ups per handover.`);
     }
     const text = redactPhi(input.text.trim());
+    (context.followupAttempts ??= []).push(text);
     const candidate = tokenSet(text);
     const card = await context.glance();
     const duplicateAction = card.unresolvedActions.find((action) => isNearDuplicate(candidate, tokenSet(action.text)));
@@ -140,6 +151,37 @@ export function citationProblems(submission: HandoverSubmission, ledger: Evidenc
   return problems;
 }
 
+export const MAX_OUTSTANDING_LISTED = 3;
+
+/**
+ * handover-v6 submit-time question: sentences in the notes read that document an outstanding action
+ * (see outstanding.ts) with no open action, no proposal and no create_followup attempt about the same
+ * thing. Asked at most once per run: a second submission is accepted as the model's answer, so the
+ * model, not the detector, has the last word (and a clinician confirms every proposal).
+ */
+export function followupProblems(context: HandoverContext): string[] {
+  const check = context.followupCheck;
+  if (!check || check.asked) {
+    return [];
+  }
+  const tasks = [...check.openActions, ...context.proposals.map((proposal) => proposal.text), ...(context.followupAttempts ?? [])];
+  const uncovered = outstandingMentions(context.ledger.readNotes.values()).filter(
+    (mention) => !tasks.some((task) => coversSentence(task, mention.sentence)),
+  );
+  if (uncovered.length === 0) {
+    return [];
+  }
+  check.asked = true;
+  return uncovered
+    .slice(0, MAX_OUTSTANDING_LISTED)
+    .map(
+      (mention) =>
+        `follow-up check: note ${mention.noteId} documents an outstanding action ("${mention.sentence.slice(0, 120)}") ` +
+        "with no follow-up proposed. If it is still outstanding, call create_followup for it, then submit again. " +
+        "If it is not outstanding (done, cancelled or superseded by a later note), submit again unchanged.",
+    );
+}
+
 const submitSummary = defineTool<HandoverContext, HandoverSubmission>({
   name: TOOL_NAMES.submit,
   description:
@@ -148,7 +190,7 @@ const submitSummary = defineTool<HandoverContext, HandoverSubmission>({
     "quote copied from that note's body or comments. Statements without a verifiable quote are discarded.",
   terminal: true,
   schema: HandoverSubmission,
-  check: (input, context) => citationProblems(input, context.ledger),
+  check: (input, context) => [...citationProblems(input, context.ledger), ...followupProblems(context)],
   async run() {
     throw new Error("Terminal tools are never executed");
   },
@@ -163,7 +205,10 @@ const submitSummaryEvidence = defineTool<HandoverContext, HandoverEvidenceSubmis
     "statement drawn from several sentences. Statements without a valid evidence id are discarded.",
   terminal: true,
   schema: HandoverEvidenceSubmission,
-  check: (input, context) => citationProblems(resolveEvidenceSubmission(input, context.ledger), context.ledger),
+  check: (input, context) => [
+    ...citationProblems(resolveEvidenceSubmission(input, context.ledger), context.ledger),
+    ...followupProblems(context),
+  ],
   async run() {
     throw new Error("Terminal tools are never executed");
   },

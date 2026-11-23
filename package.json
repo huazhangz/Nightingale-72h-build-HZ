@@ -1,6 +1,6 @@
 {
   "name": "nightingale-72h-build-hz",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Longitudinal patient note and AI clinical platform",
   "scripts": {
@@ -25,7 +25,8 @@
     "admin:create": "tsx --conditions=react-server scripts/create-admin.ts",
     "eval:export-labels": "tsx --conditions=react-server evals/labels.ts",
     "eval:label-agreement": "NIGHTINGALE_LABELS_COMMAND=agreement tsx --conditions=react-server evals/labels.ts",
-    "db:backup": "tsx --conditions=react-server scripts/db-backup.ts"
+    "db:backup": "tsx --conditions=react-server scripts/db-backup.ts",
+    "eval:replay-followups": "tsx --conditions=react-server evals/replay-followup-check.ts"
   },
   "prisma": {
     "seed": "tsx --conditions=react-server prisma/seed.ts"

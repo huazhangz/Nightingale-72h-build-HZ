@@ -32,8 +32,25 @@ export type SimulationProfile = {
   negationFlipRate: number;
   /** Propose follow-ups for documented pending actions. */
   proposeFollowups: boolean;
+  /**
+   * Answer the handover-v6 follow-up check: when a submission comes back naming an outstanding
+   * action, propose a follow-up for it and submit again. With proposeFollowups false this replays
+   * the live handover-v4 failure (pending result summarised, follow-up never proposed) for a model
+   * that does act on explicit feedback.
+   */
+  answerFollowupCheck?: boolean;
   seed: number;
 };
+
+/** Pull "note <id> documents an outstanding action ("<sentence>")" requests out of repair feedback. */
+export function followupCheckRequests(content: string): Array<{ noteId: string; sentence: string }> {
+  const requests: Array<{ noteId: string; sentence: string }> = [];
+  const pattern = /follow-up check: note (\S+) documents an outstanding action \(\\?"(.+?)\\?"\) with no follow-up/g;
+  for (const match of content.matchAll(pattern)) {
+    requests.push({ noteId: match[1]!, sentence: match[2]! });
+  }
+  return requests;
+}
 
 export const CLEAN_PROFILE: SimulationProfile = {
   omitRate: 0,
@@ -150,6 +167,29 @@ export class SimulatedHandoverPolicy {
 
     const notes = (results.get(TOOL_NAMES.notes) as Array<{ notes: NoteView[] }>).flatMap((result) => result.notes);
     const readable = notes.filter((note): note is NoteView & { body: string } => typeof note.body === "string");
+
+    if (this.profile.answerFollowupCheck) {
+      const last = request.messages.at(-1);
+      const feedback = Array.isArray(last?.content)
+        ? (last.content as Array<{ type: string; is_error?: boolean; content?: unknown }>)
+            .filter((block) => block.type === "tool_result" && block.is_error)
+            .map((block) => (typeof block.content === "string" ? block.content : JSON.stringify(block.content)))
+            .join("\n")
+        : "";
+      const asked = followupCheckRequests(feedback);
+      if (asked.length > 0) {
+        return message(
+          asked.map((item) =>
+            toolUseBlock(TOOL_NAMES.followup, {
+              text: `Follow up: ${item.sentence}`.slice(0, 290),
+              kind: "follow_up",
+              source_note_id: item.noteId,
+              rationale: "Documented as outstanding",
+            }),
+          ),
+        );
+      }
+    }
 
     if (this.profile.proposeFollowups && !done(TOOL_NAMES.followup)) {
       const proposals = readable

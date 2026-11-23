@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apiFetch, ApiError, UNAUTHORIZED_EVENT } from "../../lib/api/client";
 import { careEvents } from "../../lib/events/bus";
 import { useI18n } from "../../lib/i18n/I18nContext";
@@ -79,11 +79,20 @@ export function CareShell({ children }: { children: ReactNode }) {
   const [patients, setPatients] = useState<WorklistPatient[]>([]);
   const [selected, setSelected] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
+  // The identity effect below runs once per mount; read the current location through a ref so the
+  // redirect returns the user to the page they were on, not the page the shell first mounted on.
+  const here = useRef("");
+  here.current = `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ""}`;
 
-  const goToLogin = useCallback(() => {
-    const next = `${pathname}${searchParams?.toString() ? `?${searchParams.toString()}` : ""}`;
-    router.replace(`/login?next=${encodeURIComponent(next)}`);
-  }, [pathname, router, searchParams]);
+  const goToLogin = useCallback(
+    (reason?: "expired") => {
+      const params = new URLSearchParams({ next: here.current });
+      if (reason) params.set("reason", reason);
+      router.replace(`/login?${params.toString()}`);
+    },
+    [router],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -96,7 +105,12 @@ export function CareShell({ children }: { children: ReactNode }) {
         if (caught instanceof ApiError && caught.status === 401) goToLogin();
         else setError(caught instanceof Error ? caught.message : t("auth.genericError"));
       });
-    const onUnauthorized = () => goToLogin();
+    // A confirmed lost session: replace the page with a notice at once (panels would otherwise flash
+    // "Authentication required") and go to the sign-in page, which explains what happened.
+    const onUnauthorized = () => {
+      setSessionEnded(true);
+      goToLogin("expired");
+    };
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
     return () => {
       cancelled = true;
@@ -169,6 +183,18 @@ export function CareShell({ children }: { children: ReactNode }) {
       refreshPatients,
     };
   }, [user, selected, patients, selectPatient, refreshPatients]);
+
+  if (sessionEnded) {
+    return (
+      <div className="app-shell">
+        <main className="main" id="main">
+          <p className="status" role="status">
+            {t("auth.sessionEnded")} {t("auth.sessionEnding")}
+          </p>
+        </main>
+      </div>
+    );
+  }
 
   if (!value) {
     return (

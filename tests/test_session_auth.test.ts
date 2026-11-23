@@ -3,7 +3,7 @@ import { authenticate, AuthError, MAX_FAILED_LOGINS } from "../src/lib/auth/acco
 import { hashPassword, passwordIssues, verifyPassword } from "../src/lib/auth/password";
 import { requireActor, UnauthorizedError } from "../src/lib/auth/session";
 import { ForbiddenError } from "../src/lib/auth/rbac";
-import { readCookie, SESSION_COOKIE, sessionCookie, signSession, verifySession } from "../src/lib/auth/session-token";
+import { readCookie, sessionCookie, sessionCookieName, signSession, verifySession } from "../src/lib/auth/session-token";
 import {
   handleActivate,
   handlePasswordReset,
@@ -31,8 +31,8 @@ function post(path: string, body: unknown, headers: Record<string, string> = {})
 }
 
 function cookieFrom(response: Response): string {
-  const token = readCookie((response.headers.get("set-cookie") ?? "").split(";")[0] ?? "", SESSION_COOKIE);
-  return `${SESSION_COOKIE}=${token}`;
+  const token = readCookie((response.headers.get("set-cookie") ?? "").split(";")[0] ?? "", sessionCookieName());
+  return `${sessionCookieName()}=${token}`;
 }
 
 describe("password hashing and policy", () => {
@@ -65,6 +65,13 @@ describe("signed sessions", () => {
     const issued = new Date("2026-01-01T00:00:00Z");
     expect(verifySession(signSession("u", 0, issued, 60), new Date("2026-01-01T00:01:00Z"))).toBeNull();
     expect(sessionCookie("abc")).toMatch(/HttpOnly; SameSite=Lax/);
+  });
+
+  it("names the cookie after a fingerprint of the secret, so servers on one host do not collide", () => {
+    const name = sessionCookieName();
+    expect(name).toMatch(/^ng_session_[0-9a-f]{8}$/);
+    expect(sessionCookieName()).toBe(name);
+    expect(sessionCookie("abc").startsWith(`${name}=abc;`)).toBe(true);
   });
 });
 
@@ -118,6 +125,22 @@ describe("accounts", () => {
     const me = await handleMe(new Request(`http://${HOST}/api/auth/me`, { headers: { cookie: cookieFrom(response) } }));
     expect((await me.json()).user).toMatchObject({ id: clinician.id, clinic: { id: clinicId } });
     expect((await handleMe(new Request(`http://${HOST}/api/auth/me`))).status).toBe(401);
+  });
+
+  it("ignores another server's session cookie, keeps it, and clears only the legacy cookie on sign-in", async () => {
+    const clinician = await user("CLINICIAN");
+    const foreign = `ng_session=${signSession(clinician.id, clinician.sessionVersion)}; ng_session_deadbeef=x`;
+    // Same user id, but the cookie name belongs to another server: not accepted here.
+    await expect(requireActor(new Request(`http://${HOST}/api/x`, { headers: { cookie: foreign } }))).rejects.toBeInstanceOf(UnauthorizedError);
+    const response = await handleLogin(
+      post("/api/auth/login", { email: clinician.email, password: PASSWORD }, { origin: `http://${HOST}`, cookie: foreign, "x-forwarded-for": "10.9.9.9" }),
+    );
+    expect(response.status).toBe(200);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies[0]?.startsWith(`${sessionCookieName()}=`)).toBe(true);
+    expect(cookies.filter((cookie) => /Max-Age=0/.test(cookie)).map((cookie) => cookie.split("=")[0]).sort()).toEqual(["ng_session"]);
+    const actor = await requireActor(new Request(`http://${HOST}/api/x`, { headers: { cookie: `${foreign}; ${cookieFrom(response)}` } }));
+    expect(actor.id).toBe(clinician.id);
   });
 
   it("returns one generic error for unknown emails, wrong passwords and locked accounts", async () => {

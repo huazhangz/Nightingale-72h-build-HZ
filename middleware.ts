@@ -12,7 +12,9 @@ export function middleware(request: NextRequest) {
   if (PUBLIC_PAGES.some((page) => pathname === page || pathname.startsWith(`${page}/`))) {
     return NextResponse.next();
   }
-  if (request.cookies.get("ng_session")?.value) {
+  // The cookie name carries a fingerprint of the signing secret (see session-token.ts); the edge
+  // runtime cannot read the secret, so any session-looking cookie passes this UX gate.
+  if (request.cookies.getAll().some((cookie) => cookie.name.startsWith("ng_session") && cookie.value)) {
     return NextResponse.next();
   }
   const login = request.nextUrl.clone();

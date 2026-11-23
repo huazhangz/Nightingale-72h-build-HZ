@@ -7,7 +7,7 @@ import { executeAgent, failAgentRun, finishAgentRun } from "../shared/execute";
 import { createRecordContext, type EvidenceLedger } from "../shared/record-context";
 import { agentSettingsFromEnv, createClientFactory, type HandoverAgentSettings } from "./config";
 import { applyGuardrails, criticalFindingsFor, type CriticalFinding } from "./guardrails";
-import { citationModeFor, handoverUserMessage, promptHash, systemPrompt, type PromptVersion } from "./prompts";
+import { citationModeFor, followupCheckFor, handoverUserMessage, promptHash, systemPrompt, type PromptVersion } from "./prompts";
 import { HandoverEvidenceSubmission, HandoverSubmission, type GuardrailReport, type HandoverSummary } from "./schema";
 import { HANDOVER_EVIDENCE_TOOLS, HANDOVER_TOOLS, resolveEvidenceSubmission, type HandoverContext } from "./tools";
 
@@ -91,6 +91,11 @@ export async function runHandoverAgent(
   const now = options.now ?? new Date();
   const citationMode = citationModeFor(promptVersion);
   const context: HandoverContext = { ...createRecordContext(actor, patientId, now), citationMode, proposals: [] };
+  if (followupCheckFor(promptVersion)) {
+    // The glance card is memoised per run, so the model's own get_glance_cards call reuses this read.
+    const card = await context.glance();
+    context.followupCheck = { openActions: card.unresolvedActions.map((action) => action.text), asked: false };
+  }
 
   const { runId, result } = await executeAgent({
     agent: HANDOVER_AGENT,

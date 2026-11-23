@@ -172,6 +172,36 @@ Live, `handover-v4` with one repair round on the 20 new cases × 1 ([report](./e
 
 Total live spend for all Gemini testing: **$4.73** of the $5 budget. Further evaluation runs offline (`eval:smoke`, `eval:risk:smoke`, oracle/null/rules on every case set) until a new budget is set.
 
+### 7.6 Follow-up prompt and check: handover-v6 (2026-11-23, offline)
+
+Target: the two §7.5 failures. Reading the recorded transcripts, both runs summarised the pending result correctly (one even filed it as a `pending_action` item quoting "histology is pending") and never called `create_followup`. v4's workflow calls the step "optional" and defines outstanding actions only in the abstract.
+
+**Change.**
+1. **Prompt (`handover-v6`, v4 plus two edits):**
+   - the workflow step now says to list every outstanding action and call `create_followup` for each one not already open;
+   - `<followups>` names the three patterns with examples (pending or awaited results; tests requested, ordered or booked; replies awaited), says that mentioning an action in the summary is not enough, and keeps the existing exclusions (open actions, routine reviews, safety-net advice, anything a later note closes).
+2. **One-time submit check** (`src/lib/agent/handover/outstanding.ts`, `followupProblems` in `tools.ts`):
+   - a deterministic detector finds sentences in the notes read that document an outstanding action;
+   - if no open action, proposal or `create_followup` attempt is about the same thing, the submission comes back once, naming the note and the sentence;
+   - a second submission is always accepted, so the model keeps the last word, and a clinician confirms every proposal.
+   - Routine "review in a month" / "recheck in two weeks" is deliberately not detected (see below).
+
+No live run: the Gemini budget is spent (§7.5). Validation is offline, in three parts ([report](./eval/2026-11-23-handover-v6-offline.md)).
+
+| Check | Data | Result |
+| --- | --- | --- |
+| Detector against labels | All 50 cases | Fires on 3/3 cases that need a follow-up. Of the 6 cases where a follow-up is a misuse, it fires on 1 (`adv-action-already-open`), which the open action covers, so the check stays silent there. A "review / recheck in N" pattern was dropped after it fired on 2 misuse cases and on no case that needs a follow-up. |
+| Replay against recorded live runs (`npm run eval:replay-followups`) | 479 submitted Gemini handover transcripts, v1–v5, all saved runs | Of 6 runs that missed an expected follow-up, the check asks in **5**, each time about the right sentence; the sixth read no notes at all, a different failure. Of 107 runs where proposing is a misuse, it asks in **0** (no false prompts). Of 352 "any" runs, it asks in 9. |
+| End-to-end, scripted policy (`skip-followups-v4` / `-v6` presets) | 50 cases × 1, real tools and guardrails | A policy that never proposes on its own but acts on feedback, replaying the live failure mode: expected follow-ups **0/3 on v4 → 3/3 on v6**; unwarranted follow-ups 0/6 on both; oracle-v6 still 50/50 (3 runs took the "submit again unchanged" path, so the one-time ask always ends). |
+
+**Not yet measured:** how a live model answers the question, and whether the stronger prompt wording leads to over-proposing on "any" cases. The preset `gemini-v6` runs that measurement when a budget is available:
+
+```bash
+npm run eval -- --variants gemini-v4-repair,gemini-v6 --cases challenge --reps 3
+```
+
+`handover-v6` is the default, because the deterministic part was shown offline to fire on the real misses without false prompts. `NIGHTINGALE_AGENT_PROMPT=handover-v4` restores the previous default.
+
 ### 7.2 Claude
 
 Not yet run: needs an Anthropic API key. At 20 cases × 5 reps × 2 prompts on `claude-opus-5-5` the pre-flight estimate is about $36.

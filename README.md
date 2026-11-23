@@ -76,7 +76,7 @@ Both agents run on one platform (`src/lib/agent/core`): the Anthropic SDK Tool R
 
 Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALUATION.md](./docs/EVALUATION.md). Live-API test plan: [docs/API_TESTING.zh.md](./docs/API_TESTING.zh.md).
 
-**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21 to 23, $4.73 in total): the risk agent (`risk-v2`) rates 96.4% of 84 core trials and 90.9% of 33 challenge cases at the exact level, with **no under-triage on any of the 61 cases** (rule floor alone: about half under-triaged). The handover agent (`handover-v4` with one citation-repair round) passes 97.5% of core runs and 90–95% of the 30 challenge cases, with zero leakage. Evaluation sets: 50 handover and 61 risk cases (frozen core + challenge). Claude runs are pending an Anthropic key.
+**Live results** (Gemini 2.5 Flash through the transport adapter, 2026-11-21 to 23, $4.73 in total): the risk agent (`risk-v2`) rates 96.4% of 84 core trials and 90.9% of 33 challenge cases at the exact level, with **no under-triage on any of the 61 cases** (rule floor alone: about half under-triaged). The handover agent (`handover-v4` with one citation-repair round) passes 97.5% of core runs and 90–95% of the 30 challenge cases, with zero leakage. Its two remaining failures were follow-ups not proposed for pending results. The default `handover-v6` targets them with a clearer follow-up procedure and a one-time submit check. Validated offline: replayed on 479 recorded live runs, the check would have asked in 5 of the 6 real misses and in none of the 107 runs where a follow-up is a misuse ([EVALUATION §7.6](./docs/EVALUATION.md)); a live re-run awaits budget. Evaluation sets: 50 handover and 61 risk cases (frozen core + challenge). Claude runs are pending an Anthropic key.
 
 ---
 
@@ -111,7 +111,7 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    npx vitest run
    ```
 
-   **217 / 217** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
+   **229 / 229** tests pass on the current suite. Prefer `npm run test` or see **Test Suite & Compatibility Guide** below.
 
 5. **Agent evaluations** (offline, no API key: harness self-tests on oracle and rule baselines)
 
@@ -122,6 +122,18 @@ Design: [docs/AGENT_DESIGN.md](./docs/AGENT_DESIGN.md). Measurement: [docs/EVALU
    ```bash
    npm run eval:risk:smoke
    ```
+
+   ```bash
+   npm run eval:replay-followups
+   ```
+
+### Signed out unexpectedly?
+
+Each server names its session cookie after its own signing secret (`ng_session_<fingerprint>`), so a dev server, a Docker container and a second clone on the same machine no longer sign each other out. If you are still sent to `/login`:
+
+- a production server started with a new `NIGHTINGALE_SESSION_SECRET` each time signs everyone out on restart, so keep the secret in `.env`;
+- `npm run admin:create` with an existing email resets that account and ends its sessions;
+- in development, the server log names the reason (`session rejected (…)`).
 
 ### Environment
 
@@ -166,7 +178,7 @@ Users who forget their password get a one-time **password reset link** from an a
 
 Vitest 3 is the only test runner. Integration tests use **Prisma against SQLite** (`DATABASE_URL` → `prisma/dev.db`). UI tests (`tests/test_ui_refresh.test.ts`, `tests/test_risk_ui.test.ts`) use **jsdom** + Testing Library. All other files use the **node** environment (`vitest.config.ts`).
 
-**Last verified:** 217 / 217 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
+**Last verified:** 229 / 229 passing (`npx vitest run`), `tsc --noEmit` clean, `next build` passing.
 
 ### Why tests are single-threaded
 

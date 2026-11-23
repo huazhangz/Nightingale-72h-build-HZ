@@ -1,7 +1,7 @@
 import { prisma } from "../db";
 import { ForbiddenError, type Actor } from "./rbac";
 import { ConflictError } from "./conflict";
-import { SESSION_COOKIE, isHeaderAuthAllowed, readCookie, verifySession } from "./session-token";
+import { isHeaderAuthAllowed, readSessionCookie, sessionCookieNames, verifySession } from "./session-token";
 
 export class UnauthorizedError extends Error {
   readonly code = "UNAUTHORIZED" as const;
@@ -57,20 +57,44 @@ export function assertSameOrigin(request: Request): void {
   }
 }
 
+/** Why a request carried no usable session (development diagnostics only; never sent to clients). */
+export type SessionRejection =
+  | "no_cookie"
+  | "other_server_cookie"
+  | "bad_signature_or_expired"
+  | "unknown_user"
+  | "revoked"
+  | "inactive_account";
+
 /** The signed-in user behind a request, or null. Session version and account status are re-checked. */
 export async function currentUser(request: Request) {
-  const token = readCookie(request.headers.get("cookie"), SESSION_COOKIE) ?? bearerToken(request);
+  const cookieHeader = request.headers.get("cookie");
+  const token = readSessionCookie(cookieHeader) ?? bearerToken(request);
   const session = verifySession(token);
+  let rejection: SessionRejection | null = null;
   let user = session ? await prisma.user.findUnique({ where: { id: session.sub } }) : null;
-  if (user && session && user.sessionVersion !== session.sv) {
+  if (!token) {
+    rejection = sessionCookieNames(cookieHeader).length > 0 ? "other_server_cookie" : "no_cookie";
+  } else if (!session) {
+    rejection = "bad_signature_or_expired";
+  } else if (!user) {
+    rejection = "unknown_user";
+  } else if (user.sessionVersion !== session.sv) {
+    rejection = "revoked";
     user = null;
   }
   if (!user && !session && isHeaderAuthAllowed()) {
     const headerId = request.headers.get("x-user-id");
     user = headerId ? await prisma.user.findUnique({ where: { id: headerId } }) : null;
+    if (user) rejection = null;
   }
-  if (!user || user.isServiceAccount || user.status !== "ACTIVE") {
-    return null;
+  if (user && (user.isServiceAccount || user.status !== "ACTIVE")) {
+    rejection = "inactive_account";
+    user = null;
+  }
+  if (!user && rejection && rejection !== "no_cookie" && process.env.NODE_ENV === "development") {
+    // Helps explain an unexpected sign-out while developing; no token or user data is logged.
+    console.warn(`[nightingale] session rejected (${rejection}) for ${request.method} ${new URL(request.url).pathname}`);
   }
   return user;
 }
